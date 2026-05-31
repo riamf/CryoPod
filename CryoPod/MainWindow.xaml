@@ -25,8 +25,9 @@
                               Height="72"
                               IsActive="True"
                               HorizontalAlignment="Center" />
-                <TextBlock HorizontalAlignment="Center"
-                           Text="Loading..." />
+                <TextBlock x:Name="StartupStatusText"
+                           HorizontalAlignment="Center"
+                           Text="Searching for installed games..." />
             </StackPanel>
         </Grid>
     </Grid>

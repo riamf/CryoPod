@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
+using CryoPod.Models;
+using CryoPod.Services.GameExplorer;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -26,6 +28,8 @@ namespace CryoPod
     /// </summary>
     public sealed partial class MainWindow : Window
     {
+        private IReadOnlyList<InstalledGame> _installedGames = [];
+
         public MainWindow()
         {
             InitializeComponent();
@@ -49,8 +53,14 @@ namespace CryoPod
         private async Task RunStartupWorkAsync()
         {
             StartupLoaderPanel.Visibility = Visibility.Visible;
+            StartupStatusText.Text = "Searching for installed games...";
 
-            await Task.Delay(2000);
+            var coordinator = new GameExplorerCoordinator(new IGameExplorerService[]
+            {
+                new PlaceholderGameExplorerService(),
+            });
+
+            _installedGames = await coordinator.FindInstalledGamesAsync();
 
             StartupLoaderPanel.Visibility = Visibility.Collapsed;
         }
