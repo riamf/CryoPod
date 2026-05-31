@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -31,6 +32,11 @@ namespace CryoPod
             SetFullScreen();
         }
 
+        private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
+        {
+            await RunStartupWorkAsync();
+        }
+
         private void SetFullScreen()
         {
             var windowHandle = WindowNative.GetWindowHandle(this);
@@ -38,6 +44,15 @@ namespace CryoPod
             var appWindow = AppWindow.GetFromWindowId(windowId);
 
             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+        }
+
+        private async Task RunStartupWorkAsync()
+        {
+            StartupLoaderPanel.Visibility = Visibility.Visible;
+
+            await Task.Delay(2000);
+
+            StartupLoaderPanel.Visibility = Visibility.Collapsed;
         }
     }
 }
