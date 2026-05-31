@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,6 +9,7 @@ using System.Threading.Tasks;
 using CryoPod.Models;
 using CryoPod.Services.GameExplorer;
 using CryoPod.Services.Steam;
+using CryoPod.ViewModels;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -30,6 +32,12 @@ namespace CryoPod
     /// </summary>
     public sealed partial class MainWindow : Window
     {
+        private const int GamesPerRow = 3;
+        private const double GameCardAspectRatio = 420d / 203d;
+        private const double GameCardTextHeight = 56;
+        private const double GameCardVerticalSpacing = 8;
+        private const double GameCardHorizontalMargin = 16;
+
         private static readonly TimeSpan SteamMetadataRefreshInterval = TimeSpan.FromHours(24);
 
         private IReadOnlyList<InstalledGame> _installedGames = [];
@@ -46,6 +54,16 @@ namespace CryoPod
         private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
         {
             await RunStartupWorkAsync();
+        }
+
+        private void GamesGridView_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateGameGridLayout();
+        }
+
+        private void GamesGridView_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateGameGridLayout();
         }
 
         private void SetFullScreen()
@@ -100,6 +118,8 @@ namespace CryoPod
                 var loadedAppDetails = await LoadSteamAppDetailsAsync(missingSteamAppIds, steamGamesByAppId);
                 _steamAppDetails = MergeSteamAppDetails(_steamAppDetails, loadedAppDetails);
             }
+
+            UpdateGameLibrary();
 
             StartupLoaderPanel.Visibility = Visibility.Collapsed;
 
@@ -176,6 +196,7 @@ namespace CryoPod
                 var refreshedAppDetails = await _steamAppDetailsService.GetAppDetailsAsync(staleSteamAppIds, progress);
                 await _steamAppDetailsCacheService.SaveAppDetailsAsync(refreshedAppDetails);
                 _steamAppDetails = MergeSteamAppDetails(_steamAppDetails, refreshedAppDetails);
+                UpdateGameLibrary();
                 Debug.WriteLine($"Background Steam metadata refresh completed for {refreshedAppDetails.Count} game(s).");
             }
             catch (Exception exception)
@@ -194,6 +215,51 @@ namespace CryoPod
                 .GroupBy(details => details.Data!.SteamAppId)
                 .Select(group => group.Last())
                 .ToList();
+        }
+
+        private void UpdateGameLibrary()
+        {
+            var steamAppDetailsByAppId = _steamAppDetails
+                .Where(details => details.Data?.SteamAppId > 0)
+                .GroupBy(details => details.Data!.SteamAppId)
+                .ToDictionary(group => group.Key, group => group.Last());
+
+            var gameLibraryItems = _installedGames
+                .Select(game =>
+                {
+                    SteamAppDetailsResponse? appDetails = null;
+                    if (game.AppId is > 0)
+                    {
+                        steamAppDetailsByAppId.TryGetValue(game.AppId.Value, out appDetails);
+                    }
+
+                    var thumbnailUrl = appDetails?.Data?.HeaderImage ?? appDetails?.Data?.CapsuleImage;
+                    return new GameLibraryItemViewModel(game, thumbnailUrl);
+                })
+                .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            GamesGridView.ItemsSource = gameLibraryItems;
+            UpdateGameGridLayout();
+        }
+
+        private void UpdateGameGridLayout()
+        {
+            if (GamesGridView.ItemsPanelRoot is not ItemsWrapGrid itemsWrapGrid)
+            {
+                return;
+            }
+
+            var availableWidth = GamesGridView.ActualWidth
+                - GamesGridView.Padding.Left
+                - GamesGridView.Padding.Right
+                - (GameCardHorizontalMargin * GamesPerRow);
+
+            var itemWidth = Math.Max(220, availableWidth / GamesPerRow);
+            var imageHeight = itemWidth / GameCardAspectRatio;
+
+            itemsWrapGrid.ItemWidth = itemWidth;
+            itemsWrapGrid.ItemHeight = imageHeight + GameCardTextHeight + GameCardVerticalSpacing;
         }
     }
 }

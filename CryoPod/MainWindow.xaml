@@ -14,6 +14,56 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded">
+        <GridView x:Name="GamesGridView"
+                  Margin="24"
+                  Padding="8"
+                  Loaded="GamesGridView_Loaded"
+                  SizeChanged="GamesGridView_SizeChanged"
+                  IsItemClickEnabled="False"
+                  SelectionMode="None"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.HorizontalScrollMode="Disabled"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollMode="Enabled">
+            <GridView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <ItemsWrapGrid Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </GridView.ItemsPanel>
+            <GridView.ItemContainerStyle>
+                <Style TargetType="GridViewItem">
+                    <Setter Property="Margin" Value="8" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+            </GridView.ItemContainerStyle>
+            <GridView.ItemTemplate>
+                <DataTemplate>
+                    <Grid RowSpacing="8"
+                          HorizontalAlignment="Stretch">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="203" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                CornerRadius="8"
+                                 HorizontalAlignment="Stretch"
+                                Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                            <Image Source="{Binding Thumbnail}"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Stretch"
+                                   Stretch="UniformToFill" />
+                        </Border>
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding Name}"
+                                   HorizontalAlignment="Stretch"
+                                   TextAlignment="Center"
+                                   TextWrapping="WrapWholeWords"
+                                   MaxLines="2" />
+                    </Grid>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
         <Grid x:Name="StartupLoaderPanel"
               Background="Transparent"
               HorizontalAlignment="Stretch"
