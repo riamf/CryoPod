@@ -30,9 +30,12 @@ namespace CryoPod
     /// </summary>
     public sealed partial class MainWindow : Window
     {
+        private static readonly TimeSpan SteamMetadataRefreshInterval = TimeSpan.FromHours(24);
+
         private IReadOnlyList<InstalledGame> _installedGames = [];
         private IReadOnlyList<SteamAppDetailsResponse> _steamAppDetails = [];
         private readonly ISteamAppDetailsService _steamAppDetailsService = new SteamAppDetailsService();
+        private readonly ISteamAppDetailsCacheService _steamAppDetailsCacheService = new SteamAppDetailsCacheService();
 
         public MainWindow()
         {
@@ -68,21 +71,45 @@ namespace CryoPod
 
             _installedGames = await coordinator.FindInstalledGamesAsync();
 
-            StartupStatusText.Text = "Loading Steam metadata...";
-            _steamAppDetails = await LoadSteamAppDetailsAsync();
-
-            StartupLoaderPanel.Visibility = Visibility.Collapsed;
-        }
-
-        private async Task<IReadOnlyList<SteamAppDetailsResponse>> LoadSteamAppDetailsAsync()
-        {
             var steamGamesByAppId = _installedGames
                 .Where(game => game.AppId is > 0)
                 .GroupBy(game => game.AppId!.Value)
                 .ToDictionary(group => group.Key, group => group.First());
 
             var steamAppIds = steamGamesByAppId.Keys.ToList();
+            var cachedAppDetails = await _steamAppDetailsCacheService.GetCachedAppDetailsAsync(steamAppIds);
 
+            _steamAppDetails = cachedAppDetails.Values
+                .Where(entry => entry.AppDetails?.Success == true)
+                .Select(entry => entry.AppDetails!)
+                .ToList();
+
+            var missingSteamAppIds = steamAppIds
+                .Where(appId => !cachedAppDetails.TryGetValue(appId, out var cachedEntry) || cachedEntry.AppDetails?.Success != true)
+                .ToList();
+
+            var staleSteamAppIds = steamAppIds
+                .Where(appId => cachedAppDetails.TryGetValue(appId, out var cachedEntry)
+                    && cachedEntry.AppDetails?.Success == true
+                    && DateTimeOffset.UtcNow - cachedEntry.LastUpdatedUtc >= SteamMetadataRefreshInterval)
+                .ToList();
+
+            if (missingSteamAppIds.Count > 0)
+            {
+                StartupStatusText.Text = "Loading Steam metadata...";
+                var loadedAppDetails = await LoadSteamAppDetailsAsync(missingSteamAppIds, steamGamesByAppId);
+                _steamAppDetails = MergeSteamAppDetails(_steamAppDetails, loadedAppDetails);
+            }
+
+            StartupLoaderPanel.Visibility = Visibility.Collapsed;
+
+            _ = RefreshSteamAppDetailsInBackgroundAsync(staleSteamAppIds, steamGamesByAppId);
+        }
+
+        private async Task<IReadOnlyList<SteamAppDetailsResponse>> LoadSteamAppDetailsAsync(
+            IReadOnlyList<int> steamAppIds,
+            IReadOnlyDictionary<int, InstalledGame> steamGamesByAppId)
+        {
             if (steamAppIds.Count == 0)
             {
                 StartupProgressBar.IsIndeterminate = false;
@@ -111,6 +138,7 @@ namespace CryoPod
             try
             {
                 var appDetails = await _steamAppDetailsService.GetAppDetailsAsync(steamAppIds, progress);
+                await _steamAppDetailsCacheService.SaveAppDetailsAsync(appDetails);
                 StartupStatusText.Text = $"Loaded Steam metadata for {appDetails.Count} game(s).";
                 StartupProgressBar.Value = steamAppIds.Count;
                 Debug.WriteLine($"Loaded Steam metadata for {appDetails.Count} game(s).");
@@ -121,6 +149,51 @@ namespace CryoPod
                 StartupStatusText.Text = "Failed to load Steam metadata.";
                 return [];
             }
+        }
+
+        private async Task RefreshSteamAppDetailsInBackgroundAsync(
+            IReadOnlyList<int> staleSteamAppIds,
+            IReadOnlyDictionary<int, InstalledGame> steamGamesByAppId)
+        {
+            if (staleSteamAppIds.Count == 0)
+            {
+                return;
+            }
+
+            Debug.WriteLine($"Refreshing cached Steam metadata for {staleSteamAppIds.Count} game(s) in the background.");
+
+            var progress = new Progress<SteamAppDetailsProgress>(progressInfo =>
+            {
+                var gameName = steamGamesByAppId.TryGetValue(progressInfo.SteamAppId, out var game)
+                    ? game.Name
+                    : progressInfo.SteamAppId.ToString();
+
+                Debug.WriteLine($"[Background {progressInfo.CurrentItemIndex}/{progressInfo.TotalItems}] Refreshing {gameName} ({progressInfo.SteamAppId}) data");
+            });
+
+            try
+            {
+                var refreshedAppDetails = await _steamAppDetailsService.GetAppDetailsAsync(staleSteamAppIds, progress);
+                await _steamAppDetailsCacheService.SaveAppDetailsAsync(refreshedAppDetails);
+                _steamAppDetails = MergeSteamAppDetails(_steamAppDetails, refreshedAppDetails);
+                Debug.WriteLine($"Background Steam metadata refresh completed for {refreshedAppDetails.Count} game(s).");
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Background Steam metadata refresh failed: {exception}");
+            }
+        }
+
+        private static IReadOnlyList<SteamAppDetailsResponse> MergeSteamAppDetails(
+            IEnumerable<SteamAppDetailsResponse> existingAppDetails,
+            IEnumerable<SteamAppDetailsResponse> newAppDetails)
+        {
+            return existingAppDetails
+                .Concat(newAppDetails)
+                .Where(details => details.Data?.SteamAppId > 0)
+                .GroupBy(details => details.Data!.SteamAppId)
+                .Select(group => group.Last())
+                .ToList();
         }
     }
 }
