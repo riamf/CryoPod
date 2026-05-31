@@ -25,6 +25,12 @@
                               Height="72"
                               IsActive="True"
                               HorizontalAlignment="Center" />
+                <ProgressBar x:Name="StartupProgressBar"
+                             Width="320"
+                             Minimum="0"
+                             Maximum="1"
+                             Value="0"
+                             IsIndeterminate="True" />
                 <TextBlock x:Name="StartupStatusText"
                            HorizontalAlignment="Center"
                            Text="Searching for installed games..." />
