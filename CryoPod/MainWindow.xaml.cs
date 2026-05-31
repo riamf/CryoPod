@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -10,6 +11,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
+using WinRT.Interop;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 
@@ -26,6 +28,16 @@ namespace CryoPod
         public MainWindow()
         {
             InitializeComponent();
+            SetFullScreen();
+        }
+
+        private void SetFullScreen()
+        {
+            var windowHandle = WindowNative.GetWindowHandle(this);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+            var appWindow = AppWindow.GetFromWindowId(windowId);
+
+            appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
         }
     }
 }
