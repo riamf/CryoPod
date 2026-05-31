@@ -125,7 +125,26 @@ namespace CryoPod.Services.GameExplorer
                 installPath = Path.Combine(libraryPath, "steamapps", "common", installDir);
             }
 
-            return new InstalledGame(name, "Steam", installPath);
+            return new InstalledGame(name, "Steam", installPath, GetAppId(values, manifestFilePath));
+        }
+
+        private static int? GetAppId(IReadOnlyDictionary<string, string> values, string manifestFilePath)
+        {
+            if (values.TryGetValue("appid", out var appIdValue) && int.TryParse(appIdValue, out var appId))
+            {
+                return appId;
+            }
+
+            const string prefix = "appmanifest_";
+            var manifestFileName = Path.GetFileNameWithoutExtension(manifestFilePath);
+
+            if (manifestFileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(manifestFileName[prefix.Length..], out appId))
+            {
+                return appId;
+            }
+
+            return null;
         }
 
         private static Dictionary<string, string> ParseKeyValueFile(string filePath)
