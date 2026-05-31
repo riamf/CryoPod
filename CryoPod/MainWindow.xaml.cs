@@ -57,7 +57,7 @@ namespace CryoPod
 
             var coordinator = new GameExplorerCoordinator(new IGameExplorerService[]
             {
-                new PlaceholderGameExplorerService(),
+                new SteamGameExplorerService(),
             });
 
             _installedGames = await coordinator.FindInstalledGamesAsync();
