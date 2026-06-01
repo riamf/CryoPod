@@ -9,6 +9,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using CryoPod.Models;
 using CryoPod.Services.GameExplorer;
+using CryoPod.Services.Input;
 using CryoPod.Services.Steam;
 using CryoPod.ViewModels;
 using Microsoft.UI.Composition;
@@ -53,10 +54,16 @@ namespace CryoPod
         private IReadOnlyList<SteamAppDetailsResponse> _steamAppDetails = [];
         private readonly ISteamAppDetailsService _steamAppDetailsService = new SteamAppDetailsService();
         private readonly ISteamAppDetailsCacheService _steamAppDetailsCacheService = new SteamAppDetailsCacheService();
+        private readonly GameLibraryNavigationController _gameLibraryNavigationController;
 
         public MainWindow()
         {
             InitializeComponent();
+            Closed += MainWindow_Closed;
+            _gameLibraryNavigationController = new GameLibraryNavigationController(
+                GamesGridView,
+                DispatcherQueue,
+                CanProcessLibraryNavigation);
             SetFullScreen();
         }
 
@@ -73,6 +80,12 @@ namespace CryoPod
         private void GamesGridView_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             UpdateGameGridLayout();
+        }
+
+        private void MainWindow_Closed(object sender, WindowEventArgs args)
+        {
+            _gameLibraryNavigationController.Dispose();
+            Closed -= MainWindow_Closed;
         }
 
         private void GamesGridView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -158,7 +171,7 @@ namespace CryoPod
 
             StartupLoaderPanel.Visibility = Visibility.Collapsed;
 
-            await FocusGameGridAsync();
+            await _gameLibraryNavigationController.FocusFirstItemAsync();
 
             _ = RefreshSteamAppDetailsInBackgroundAsync(staleSteamAppIds, steamGamesByAppId);
         }
@@ -299,27 +312,6 @@ namespace CryoPod
             itemsWrapGrid.ItemHeight = imageHeight + GameCardTextHeight + GameCardVerticalSpacing;
         }
 
-        private async Task FocusGameGridAsync()
-        {
-            if (GamesGridView.Items.Count == 0)
-            {
-                return;
-            }
-
-            GamesGridView.UpdateLayout();
-            GamesGridView.ScrollIntoView(GamesGridView.Items[0]);
-
-            await Task.Yield();
-
-            if (GamesGridView.ContainerFromIndex(0) is GridViewItem firstItem)
-            {
-                firstItem.Focus(FocusState.Programmatic);
-                return;
-            }
-
-            GamesGridView.Focus(FocusState.Programmatic);
-        }
-
         private void GameGridItem_GotFocus(object sender, RoutedEventArgs e)
         {
             if (sender is GridViewItem itemContainer)
@@ -342,6 +334,11 @@ namespace CryoPod
             {
                 UpdateGameGridItemCenterPoint(itemContainer);
             }
+        }
+
+        private bool CanProcessLibraryNavigation()
+        {
+            return StartupLoaderPanel.Visibility != Visibility.Visible;
         }
 
         private static void EnsureGameGridItemTransform(GridViewItem itemContainer)
@@ -449,5 +446,6 @@ namespace CryoPod
         {
             return (itemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("GameNameTextBlock") as TextBlock;
         }
+
     }
 }
