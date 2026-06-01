@@ -19,11 +19,13 @@
                   Padding="8"
                   Loaded="GamesGridView_Loaded"
                   SizeChanged="GamesGridView_SizeChanged"
+                  ContainerContentChanging="GamesGridView_ContainerContentChanging"
                   IsItemClickEnabled="False"
+                  IsTabStop="True"
                   SelectionMode="None"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   ScrollViewer.HorizontalScrollMode="Disabled"
-                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollBarVisibility="Hidden"
                   ScrollViewer.VerticalScrollMode="Enabled">
             <GridView.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -34,6 +36,13 @@
                 <Style TargetType="GridViewItem">
                     <Setter Property="Margin" Value="8" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="UseSystemFocusVisuals" Value="False" />
+                    <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <ScaleTransform ScaleX="1" ScaleY="1" />
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </GridView.ItemContainerStyle>
             <GridView.ItemTemplate>
@@ -44,21 +53,32 @@
                             <RowDefinition Height="203" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <Border Grid.Row="0"
-                                CornerRadius="8"
-                                 HorizontalAlignment="Stretch"
-                                Background="{ThemeResource ControlFillColorSecondaryBrush}">
-                            <Image Source="{Binding Thumbnail}"
-                                   HorizontalAlignment="Stretch"
-                                   VerticalAlignment="Stretch"
-                                   Stretch="UniformToFill" />
-                        </Border>
-                        <TextBlock Grid.Row="1"
+                        <Grid Grid.Row="0">
+                            <Border x:Name="FocusGlowBorder"
+                                    Margin="-8"
+                                    CornerRadius="14"
+                                    BorderThickness="2"
+                                    BorderBrush="#FF7AC7FF"
+                                    Background="#167AC7FF"
+                                    Opacity="0"
+                                    IsHitTestVisible="False" />
+                            <Border CornerRadius="8"
+                                    HorizontalAlignment="Stretch"
+                                    Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                                <Image Source="{Binding Thumbnail}"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"
+                                       Stretch="UniformToFill" />
+                            </Border>
+                        </Grid>
+                        <TextBlock x:Name="GameNameTextBlock"
+                                   Grid.Row="1"
                                    Text="{Binding Name}"
                                    HorizontalAlignment="Stretch"
                                    TextAlignment="Center"
                                    TextWrapping="WrapWholeWords"
-                                   MaxLines="2" />
+                                   MaxLines="2"
+                                   Opacity="0.82" />
                     </Grid>
                 </DataTemplate>
             </GridView.ItemTemplate>

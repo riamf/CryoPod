@@ -4,16 +4,19 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using CryoPod.Models;
 using CryoPod.Services.GameExplorer;
 using CryoPod.Services.Steam;
 using CryoPod.ViewModels;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -37,6 +40,12 @@ namespace CryoPod
         private const double GameCardTextHeight = 56;
         private const double GameCardVerticalSpacing = 8;
         private const double GameCardHorizontalMargin = 16;
+        private const double FocusedGameCardScale = 1.03;
+        private const float FocusGlowOpacity = 1f;
+        private const float UnfocusedGlowOpacity = 0f;
+        private const float FocusedTitleOpacity = 1f;
+        private const float UnfocusedTitleOpacity = 0.82f;
+        private static readonly TimeSpan FocusAnimationDuration = TimeSpan.FromMilliseconds(180);
 
         private static readonly TimeSpan SteamMetadataRefreshInterval = TimeSpan.FromHours(24);
 
@@ -64,6 +73,32 @@ namespace CryoPod
         private void GamesGridView_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             UpdateGameGridLayout();
+        }
+
+        private void GamesGridView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+        {
+            if (args.ItemContainer is not GridViewItem itemContainer)
+            {
+                return;
+            }
+
+            EnsureGameGridItemTransform(itemContainer);
+
+            itemContainer.GotFocus -= GameGridItem_GotFocus;
+            itemContainer.LostFocus -= GameGridItem_LostFocus;
+            itemContainer.SizeChanged -= GameGridItem_SizeChanged;
+
+            if (args.InRecycleQueue)
+            {
+                SetGameGridItemFocusState(itemContainer, false);
+                return;
+            }
+
+            itemContainer.GotFocus += GameGridItem_GotFocus;
+            itemContainer.LostFocus += GameGridItem_LostFocus;
+            itemContainer.SizeChanged += GameGridItem_SizeChanged;
+
+            SetGameGridItemFocusState(itemContainer, itemContainer.FocusState != FocusState.Unfocused);
         }
 
         private void SetFullScreen()
@@ -122,6 +157,8 @@ namespace CryoPod
             UpdateGameLibrary();
 
             StartupLoaderPanel.Visibility = Visibility.Collapsed;
+
+            await FocusGameGridAsync();
 
             _ = RefreshSteamAppDetailsInBackgroundAsync(staleSteamAppIds, steamGamesByAppId);
         }
@@ -260,6 +297,157 @@ namespace CryoPod
 
             itemsWrapGrid.ItemWidth = itemWidth;
             itemsWrapGrid.ItemHeight = imageHeight + GameCardTextHeight + GameCardVerticalSpacing;
+        }
+
+        private async Task FocusGameGridAsync()
+        {
+            if (GamesGridView.Items.Count == 0)
+            {
+                return;
+            }
+
+            GamesGridView.UpdateLayout();
+            GamesGridView.ScrollIntoView(GamesGridView.Items[0]);
+
+            await Task.Yield();
+
+            if (GamesGridView.ContainerFromIndex(0) is GridViewItem firstItem)
+            {
+                firstItem.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            GamesGridView.Focus(FocusState.Programmatic);
+        }
+
+        private void GameGridItem_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is GridViewItem itemContainer)
+            {
+                SetGameGridItemFocusState(itemContainer, true);
+            }
+        }
+
+        private void GameGridItem_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is GridViewItem itemContainer)
+            {
+                SetGameGridItemFocusState(itemContainer, false);
+            }
+        }
+
+        private void GameGridItem_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (sender is GridViewItem itemContainer)
+            {
+                UpdateGameGridItemCenterPoint(itemContainer);
+            }
+        }
+
+        private static void EnsureGameGridItemTransform(GridViewItem itemContainer)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+
+            if (visual.ImplicitAnimations is null)
+            {
+                visual.ImplicitAnimations = CreateGameGridItemImplicitAnimations(visual.Compositor);
+            }
+
+            UpdateGameGridItemCenterPoint(itemContainer);
+
+            if (visual.Scale == Vector3.Zero)
+            {
+                visual.Scale = Vector3.One;
+            }
+
+            if (GetFocusGlowBorder(itemContainer) is Border focusGlowBorder)
+            {
+                EnsureOpacityAnimation(focusGlowBorder);
+            }
+
+            if (GetGameNameTextBlock(itemContainer) is TextBlock gameNameTextBlock)
+            {
+                EnsureOpacityAnimation(gameNameTextBlock);
+            }
+        }
+
+        private static void SetGameGridItemFocusState(GridViewItem itemContainer, bool isFocused)
+        {
+            EnsureGameGridItemTransform(itemContainer);
+
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+            var scale = isFocused ? FocusedGameCardScale : 1d;
+            var scaleValue = (float)scale;
+
+            visual.Scale = new Vector3(scaleValue, scaleValue, 1f);
+
+            if (GetFocusGlowBorder(itemContainer) is Border focusGlowBorder)
+            {
+                ElementCompositionPreview.GetElementVisual(focusGlowBorder).Opacity = isFocused
+                    ? FocusGlowOpacity
+                    : UnfocusedGlowOpacity;
+            }
+
+            if (GetGameNameTextBlock(itemContainer) is TextBlock gameNameTextBlock)
+            {
+                ElementCompositionPreview.GetElementVisual(gameNameTextBlock).Opacity = isFocused
+                    ? FocusedTitleOpacity
+                    : UnfocusedTitleOpacity;
+            }
+
+            Canvas.SetZIndex(itemContainer, isFocused ? 1 : 0);
+        }
+
+        private static void UpdateGameGridItemCenterPoint(GridViewItem itemContainer)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+            visual.CenterPoint = new Vector3(
+                (float)(itemContainer.ActualWidth / 2),
+                (float)(itemContainer.ActualHeight / 2),
+                0f);
+        }
+
+        private static ImplicitAnimationCollection CreateGameGridItemImplicitAnimations(Compositor compositor)
+        {
+            var animations = compositor.CreateImplicitAnimationCollection();
+
+            var scaleAnimation = compositor.CreateVector3KeyFrameAnimation();
+            scaleAnimation.InsertExpressionKeyFrame(1f, "this.FinalValue");
+            scaleAnimation.Duration = FocusAnimationDuration;
+            scaleAnimation.Target = nameof(Visual.Scale);
+
+            animations[nameof(Visual.Scale)] = scaleAnimation;
+
+            return animations;
+        }
+
+        private static void EnsureOpacityAnimation(UIElement element)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(element);
+
+            if (visual.ImplicitAnimations is not null)
+            {
+                return;
+            }
+
+            var animations = visual.Compositor.CreateImplicitAnimationCollection();
+            var opacityAnimation = visual.Compositor.CreateScalarKeyFrameAnimation();
+            opacityAnimation.InsertExpressionKeyFrame(1f, "this.FinalValue");
+            opacityAnimation.Duration = FocusAnimationDuration;
+            opacityAnimation.Target = nameof(Visual.Opacity);
+
+            animations[nameof(Visual.Opacity)] = opacityAnimation;
+            visual.ImplicitAnimations = animations;
+        }
+
+        private static Border? GetFocusGlowBorder(GridViewItem itemContainer)
+        {
+            return (itemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("FocusGlowBorder") as Border;
+        }
+
+        private static TextBlock? GetGameNameTextBlock(GridViewItem itemContainer)
+        {
+            return (itemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("GameNameTextBlock") as TextBlock;
         }
     }
 }
