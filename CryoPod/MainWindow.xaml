@@ -84,6 +84,37 @@
             </GridView.ItemTemplate>
         </GridView>
 
+        <Grid x:Name="ExitPromptOverlay"
+              Background="#99000000"
+              Visibility="Collapsed">
+            <Border Width="420"
+                    Padding="28"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    CornerRadius="16"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+                <StackPanel Spacing="20">
+                    <TextBlock Text="Do you want to quit?"
+                               FontSize="24"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center"
+                               HorizontalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Spacing="16">
+                        <Button x:Name="ExitPromptYesButton"
+                                MinWidth="120"
+                                Click="ExitPromptYesButton_Click"
+                                Content="Yes" />
+                        <Button x:Name="ExitPromptNoButton"
+                                MinWidth="120"
+                                Click="ExitPromptNoButton_Click"
+                                Content="No" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <Grid x:Name="StartupLoaderPanel"
               Background="Transparent"
               HorizontalAlignment="Stretch"

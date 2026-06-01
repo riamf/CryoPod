@@ -61,9 +61,15 @@ namespace CryoPod
             InitializeComponent();
             Closed += MainWindow_Closed;
             _gameLibraryNavigationController = new GameLibraryNavigationController(
+                RootGrid,
                 GamesGridView,
+                ExitPromptYesButton,
+                ExitPromptNoButton,
                 DispatcherQueue,
-                CanProcessLibraryNavigation);
+                CanProcessMainViewInput);
+            _gameLibraryNavigationController.ExitRequested += GameLibraryNavigationController_ExitRequested;
+            _gameLibraryNavigationController.ExitConfirmed += GameLibraryNavigationController_ExitConfirmed;
+            _gameLibraryNavigationController.ExitCanceled += GameLibraryNavigationController_ExitCanceled;
             SetFullScreen();
         }
 
@@ -84,6 +90,9 @@ namespace CryoPod
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            _gameLibraryNavigationController.ExitRequested -= GameLibraryNavigationController_ExitRequested;
+            _gameLibraryNavigationController.ExitConfirmed -= GameLibraryNavigationController_ExitConfirmed;
+            _gameLibraryNavigationController.ExitCanceled -= GameLibraryNavigationController_ExitCanceled;
             _gameLibraryNavigationController.Dispose();
             Closed -= MainWindow_Closed;
         }
@@ -336,9 +345,56 @@ namespace CryoPod
             }
         }
 
-        private bool CanProcessLibraryNavigation()
+        private bool CanProcessMainViewInput()
         {
             return StartupLoaderPanel.Visibility != Visibility.Visible;
+        }
+
+        private async void GameLibraryNavigationController_ExitRequested(object? sender, EventArgs e)
+        {
+            await ShowExitPromptAsync();
+        }
+
+        private void GameLibraryNavigationController_ExitConfirmed(object? sender, EventArgs e)
+        {
+            App.Current.Exit();
+        }
+
+        private async void GameLibraryNavigationController_ExitCanceled(object? sender, EventArgs e)
+        {
+            await HideExitPromptAsync();
+        }
+
+        private async void ExitPromptYesButton_Click(object sender, RoutedEventArgs e)
+        {
+            App.Current.Exit();
+        }
+
+        private async void ExitPromptNoButton_Click(object sender, RoutedEventArgs e)
+        {
+            await HideExitPromptAsync();
+        }
+
+        private async Task ShowExitPromptAsync()
+        {
+            if (ExitPromptOverlay.Visibility == Visibility.Visible)
+            {
+                return;
+            }
+
+            ExitPromptOverlay.Visibility = Visibility.Visible;
+            await _gameLibraryNavigationController.ActivateExitPromptAsync();
+        }
+
+        private async Task HideExitPromptAsync()
+        {
+            if (ExitPromptOverlay.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            ExitPromptOverlay.Visibility = Visibility.Collapsed;
+            await _gameLibraryNavigationController.DeactivateExitPromptAsync();
         }
 
         private static void EnsureGameGridItemTransform(GridViewItem itemContainer)

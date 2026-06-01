@@ -15,6 +15,8 @@ namespace CryoPod.Services.Input
         private readonly DispatcherQueueTimer _pollingTimer;
         private NavigationDirection _lastNavigationInput = NavigationDirection.None;
         private DateTimeOffset _nextAllowedNavigationTime = DateTimeOffset.MinValue;
+        private bool _wasConfirmPressed;
+        private bool _wasBackPressed;
 
         public GamepadNavigationService(DispatcherQueue dispatcherQueue)
         {
@@ -25,6 +27,8 @@ namespace CryoPod.Services.Input
         }
 
         public event EventHandler<NavigationDirection>? NavigationRequested;
+        public event EventHandler? ConfirmRequested;
+        public event EventHandler? BackRequested;
 
         public void Dispose()
         {
@@ -38,10 +42,14 @@ namespace CryoPod.Services.Input
             if (connectedGamepad is null)
             {
                 ResetRepeat();
+                ResetButtons();
                 return;
             }
 
-            var navigationInput = GetNavigationInput(connectedGamepad.GetCurrentReading());
+            var reading = connectedGamepad.GetCurrentReading();
+            ProcessActionButtons(reading);
+
+            var navigationInput = GetNavigationInput(reading);
             if (navigationInput == NavigationDirection.None)
             {
                 ResetRepeat();
@@ -65,6 +73,31 @@ namespace CryoPod.Services.Input
         {
             _lastNavigationInput = NavigationDirection.None;
             _nextAllowedNavigationTime = DateTimeOffset.MinValue;
+        }
+
+        private void ResetButtons()
+        {
+            _wasConfirmPressed = false;
+            _wasBackPressed = false;
+        }
+
+        private void ProcessActionButtons(GamepadReading reading)
+        {
+            var isConfirmPressed = reading.Buttons.HasFlag(GamepadButtons.A);
+            var isBackPressed = reading.Buttons.HasFlag(GamepadButtons.B);
+
+            if (isConfirmPressed && !_wasConfirmPressed)
+            {
+                ConfirmRequested?.Invoke(this, EventArgs.Empty);
+            }
+
+            if (isBackPressed && !_wasBackPressed)
+            {
+                BackRequested?.Invoke(this, EventArgs.Empty);
+            }
+
+            _wasConfirmPressed = isConfirmPressed;
+            _wasBackPressed = isBackPressed;
         }
 
         private static NavigationDirection GetNavigationInput(GamepadReading reading)
