@@ -63,10 +63,13 @@ namespace CryoPod
             _gameLibraryNavigationController = new GameLibraryNavigationController(
                 RootGrid,
                 GamesGridView,
+                GameDetailsBackButton,
                 ExitPromptYesButton,
                 ExitPromptNoButton,
                 DispatcherQueue,
                 CanProcessMainViewInput);
+            _gameLibraryNavigationController.DetailsRequested += GameLibraryNavigationController_DetailsRequested;
+            _gameLibraryNavigationController.DetailsClosed += GameLibraryNavigationController_DetailsClosed;
             _gameLibraryNavigationController.ExitRequested += GameLibraryNavigationController_ExitRequested;
             _gameLibraryNavigationController.ExitConfirmed += GameLibraryNavigationController_ExitConfirmed;
             _gameLibraryNavigationController.ExitCanceled += GameLibraryNavigationController_ExitCanceled;
@@ -88,8 +91,18 @@ namespace CryoPod
             UpdateGameGridLayout();
         }
 
+        private async void GamesGridView_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            if (e.ClickedItem is GameLibraryItemViewModel gameLibraryItem)
+            {
+                await ShowGameDetailsAsync(gameLibraryItem);
+            }
+        }
+
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            _gameLibraryNavigationController.DetailsRequested -= GameLibraryNavigationController_DetailsRequested;
+            _gameLibraryNavigationController.DetailsClosed -= GameLibraryNavigationController_DetailsClosed;
             _gameLibraryNavigationController.ExitRequested -= GameLibraryNavigationController_ExitRequested;
             _gameLibraryNavigationController.ExitConfirmed -= GameLibraryNavigationController_ExitConfirmed;
             _gameLibraryNavigationController.ExitCanceled -= GameLibraryNavigationController_ExitCanceled;
@@ -293,7 +306,8 @@ namespace CryoPod
                     }
 
                     var thumbnailUrl = appDetails?.Data?.HeaderImage ?? appDetails?.Data?.CapsuleImage;
-                    return new GameLibraryItemViewModel(game, thumbnailUrl);
+                    var backgroundUrl = appDetails?.Data?.BackgroundRaw ?? appDetails?.Data?.Background;
+                    return new GameLibraryItemViewModel(game, thumbnailUrl, backgroundUrl);
                 })
                 .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
@@ -350,6 +364,21 @@ namespace CryoPod
             return StartupLoaderPanel.Visibility != Visibility.Visible;
         }
 
+        private async void GameLibraryNavigationController_DetailsRequested(object? sender, GameLibraryItemInvokedEventArgs e)
+        {
+            if (e.Item is not GameLibraryItemViewModel gameLibraryItem)
+            {
+                return;
+            }
+
+            await ShowGameDetailsAsync(gameLibraryItem);
+        }
+
+        private async void GameLibraryNavigationController_DetailsClosed(object? sender, EventArgs e)
+        {
+            await HideGameDetailsAsync();
+        }
+
         private async void GameLibraryNavigationController_ExitRequested(object? sender, EventArgs e)
         {
             await ShowExitPromptAsync();
@@ -375,6 +404,11 @@ namespace CryoPod
             await HideExitPromptAsync();
         }
 
+        private async void GameDetailsBackButton_Click(object sender, RoutedEventArgs e)
+        {
+            await HideGameDetailsAsync();
+        }
+
         private async Task ShowExitPromptAsync()
         {
             if (ExitPromptOverlay.Visibility == Visibility.Visible)
@@ -395,6 +429,25 @@ namespace CryoPod
 
             ExitPromptOverlay.Visibility = Visibility.Collapsed;
             await _gameLibraryNavigationController.DeactivateExitPromptAsync();
+        }
+
+        private async Task ShowGameDetailsAsync(GameLibraryItemViewModel gameLibraryItem)
+        {
+            GameDetailsBackgroundImage.Source = gameLibraryItem.Background;
+            GameDetailsOverlay.Visibility = Visibility.Visible;
+            await _gameLibraryNavigationController.ActivateDetailsAsync();
+        }
+
+        private async Task HideGameDetailsAsync()
+        {
+            if (GameDetailsOverlay.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            GameDetailsOverlay.Visibility = Visibility.Collapsed;
+            GameDetailsBackgroundImage.Source = null;
+            await _gameLibraryNavigationController.DeactivateDetailsAsync();
         }
 
         private static void EnsureGameGridItemTransform(GridViewItem itemContainer)

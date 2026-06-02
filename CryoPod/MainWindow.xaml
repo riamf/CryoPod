@@ -20,7 +20,8 @@
                   Loaded="GamesGridView_Loaded"
                   SizeChanged="GamesGridView_SizeChanged"
                   ContainerContentChanging="GamesGridView_ContainerContentChanging"
-                  IsItemClickEnabled="False"
+                  IsItemClickEnabled="True"
+                  ItemClick="GamesGridView_ItemClick"
                   IsTabStop="True"
                   SelectionMode="None"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -113,6 +114,21 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+        </Grid>
+
+        <Grid x:Name="GameDetailsOverlay"
+              Visibility="Collapsed">
+            <Image x:Name="GameDetailsBackgroundImage"
+                   Stretch="UniformToFill" />
+            <Rectangle Fill="#66000000" />
+            <Button x:Name="GameDetailsBackButton"
+                    Margin="24"
+                    Padding="18,10"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Click="GameDetailsBackButton_Click"
+                    Content="← Back"
+                    Style="{ThemeResource AccentButtonStyle}" />
         </Grid>
 
         <Grid x:Name="StartupLoaderPanel"

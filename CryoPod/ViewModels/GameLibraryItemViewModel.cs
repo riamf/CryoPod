@@ -7,7 +7,7 @@ namespace CryoPod.ViewModels
 {
     public sealed class GameLibraryItemViewModel
     {
-        public GameLibraryItemViewModel(InstalledGame installedGame, string? thumbnailUrl)
+        public GameLibraryItemViewModel(InstalledGame installedGame, string? thumbnailUrl, string? backgroundUrl)
         {
             InstalledGame = installedGame;
             Name = installedGame.Name;
@@ -16,6 +16,11 @@ namespace CryoPod.ViewModels
             {
                 Thumbnail = new BitmapImage(thumbnailUri);
             }
+
+            if (Uri.TryCreate(backgroundUrl, UriKind.Absolute, out var backgroundUri))
+            {
+                Background = new BitmapImage(backgroundUri);
+            }
         }
 
         public InstalledGame InstalledGame { get; }
@@ -23,5 +28,7 @@ namespace CryoPod.ViewModels
         public string Name { get; }
 
         public ImageSource? Thumbnail { get; }
+
+        public ImageSource? Background { get; }
     }
 }
