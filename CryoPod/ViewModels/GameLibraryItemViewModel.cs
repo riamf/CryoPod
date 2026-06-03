@@ -18,7 +18,7 @@ namespace CryoPod.ViewModels
             var appData = appDetails?.Data;
 
             Thumbnail = CreateImageSource(appData?.HeaderImage ?? appData?.CapsuleImage);
-            Background = CreateImageSource(appData?.BackgroundRaw ?? appData?.Background);
+            BackgroundUrl = appData?.BackgroundRaw ?? appData?.Background;
             ShortDescription = appData?.ShortDescription?.Trim();
             DetailedDescription = NormalizeHtmlText(appData?.DetailedDescription);
             AboutTheGame = NormalizeHtmlText(appData?.AboutTheGame);
@@ -26,10 +26,10 @@ namespace CryoPod.ViewModels
             Developers = JoinValues(appData?.Developers);
             Publishers = JoinValues(appData?.Publishers);
             Genres = JoinValues(appData?.Genres.Select(genre => genre.Description));
-            Screenshots = appData?.Screenshots
-                .Select(screenshot => CreateImageSource(screenshot.PathFull ?? screenshot.PathThumbnail))
-                .Where(imageSource => imageSource is not null)
-                .Cast<ImageSource>()
+            ScreenshotUrls = appData?.Screenshots
+                .Select(screenshot => screenshot.PathFull ?? screenshot.PathThumbnail)
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Cast<string>()
                 .ToList()
                 ?? [];
         }
@@ -40,7 +40,7 @@ namespace CryoPod.ViewModels
 
         public ImageSource? Thumbnail { get; }
 
-        public ImageSource? Background { get; }
+        public string? BackgroundUrl { get; }
 
         public string? ShortDescription { get; }
 
@@ -56,7 +56,7 @@ namespace CryoPod.ViewModels
 
         public string? Genres { get; }
 
-        public IReadOnlyList<ImageSource> Screenshots { get; }
+        public IReadOnlyList<string> ScreenshotUrls { get; }
 
         private static ImageSource? CreateImageSource(string? imageUrl)
         {

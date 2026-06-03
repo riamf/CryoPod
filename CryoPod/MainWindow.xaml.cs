@@ -21,6 +21,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using WinRT.Interop;
 using Windows.Foundation;
@@ -297,14 +298,10 @@ namespace CryoPod
                 .ToDictionary(group => group.Key, group => group.Last());
 
             var gameLibraryItems = _installedGames
+                .Where(game => game.AppId is > 0 && steamAppDetailsByAppId.ContainsKey(game.AppId.Value))
                 .Select(game =>
                 {
-                    SteamAppDetailsResponse? appDetails = null;
-                    if (game.AppId is > 0)
-                    {
-                        steamAppDetailsByAppId.TryGetValue(game.AppId.Value, out appDetails);
-                    }
-
+                    var appDetails = steamAppDetailsByAppId[game.AppId!.Value];
                     return new GameLibraryItemViewModel(game, appDetails);
                 })
                 .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -432,7 +429,6 @@ namespace CryoPod
         private async Task ShowGameDetailsAsync(GameLibraryItemViewModel gameLibraryItem)
         {
             BindGameDetails(gameLibraryItem);
-            GameDetailsBackgroundImage.Source = gameLibraryItem.Background;
             GameDetailsOverlay.Visibility = Visibility.Visible;
             await _gameLibraryNavigationController.ActivateDetailsAsync();
         }
@@ -451,6 +447,7 @@ namespace CryoPod
 
         private void BindGameDetails(GameLibraryItemViewModel gameLibraryItem)
         {
+            GameDetailsBackgroundImage.Source = CreateImageSource(gameLibraryItem.BackgroundUrl);
             GameDetailsTitleTextBlock.Text = gameLibraryItem.Name;
             GameDetailsMetadataTextBlock.Text = BuildGameDetailsMetadata(gameLibraryItem);
             GameDetailsMetadataTextBlock.Visibility = string.IsNullOrWhiteSpace(GameDetailsMetadataTextBlock.Text)
@@ -468,8 +465,14 @@ namespace CryoPod
                 ? Visibility.Collapsed
                 : Visibility.Visible;
 
-            GameDetailsScreenshotsItemsControl.ItemsSource = gameLibraryItem.Screenshots;
-            GameDetailsScreenshotsSection.Visibility = gameLibraryItem.Screenshots.Count == 0
+            var screenshotImages = gameLibraryItem.ScreenshotUrls
+                .Select(CreateImageSource)
+                .Where(imageSource => imageSource is not null)
+                .Cast<ImageSource>()
+                .ToList();
+
+            GameDetailsScreenshotsItemsControl.ItemsSource = screenshotImages;
+            GameDetailsScreenshotsSection.Visibility = screenshotImages.Count == 0
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
@@ -509,6 +512,16 @@ namespace CryoPod
             }
 
             return string.Join("   •   ", metadataParts);
+        }
+
+        private static ImageSource? CreateImageSource(string? imageUrl)
+        {
+            if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var imageUri))
+            {
+                return null;
+            }
+
+            return new BitmapImage(imageUri);
         }
 
         private static void EnsureGameGridItemTransform(GridViewItem itemContainer)
