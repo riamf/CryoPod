@@ -65,6 +65,7 @@ namespace CryoPod
                 RootGrid,
                 GamesGridView,
                 GameDetailsBackButton,
+                GameDetailsScreenshotsListView,
                 ExitPromptYesButton,
                 ExitPromptNoButton,
                 DispatcherQueue,
@@ -135,6 +136,32 @@ namespace CryoPod
             itemContainer.SizeChanged += GameGridItem_SizeChanged;
 
             SetGameGridItemFocusState(itemContainer, itemContainer.FocusState != FocusState.Unfocused);
+        }
+
+        private void GameDetailsScreenshotsListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+        {
+            if (args.ItemContainer is not ListViewItem itemContainer)
+            {
+                return;
+            }
+
+            EnsureScreenshotListItemTransform(itemContainer);
+
+            itemContainer.GotFocus -= ScreenshotListItem_GotFocus;
+            itemContainer.LostFocus -= ScreenshotListItem_LostFocus;
+            itemContainer.SizeChanged -= ScreenshotListItem_SizeChanged;
+
+            if (args.InRecycleQueue)
+            {
+                SetScreenshotListItemFocusState(itemContainer, false);
+                return;
+            }
+
+            itemContainer.GotFocus += ScreenshotListItem_GotFocus;
+            itemContainer.LostFocus += ScreenshotListItem_LostFocus;
+            itemContainer.SizeChanged += ScreenshotListItem_SizeChanged;
+
+            SetScreenshotListItemFocusState(itemContainer, itemContainer.FocusState != FocusState.Unfocused);
         }
 
         private void SetFullScreen()
@@ -354,6 +381,30 @@ namespace CryoPod
             }
         }
 
+        private void ScreenshotListItem_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is ListViewItem itemContainer)
+            {
+                SetScreenshotListItemFocusState(itemContainer, true);
+            }
+        }
+
+        private void ScreenshotListItem_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is ListViewItem itemContainer)
+            {
+                SetScreenshotListItemFocusState(itemContainer, false);
+            }
+        }
+
+        private void ScreenshotListItem_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (sender is ListViewItem itemContainer)
+            {
+                UpdateListItemCenterPoint(itemContainer);
+            }
+        }
+
         private bool CanProcessMainViewInput()
         {
             return StartupLoaderPanel.Visibility != Visibility.Visible;
@@ -471,7 +522,8 @@ namespace CryoPod
                 .Cast<ImageSource>()
                 .ToList();
 
-            GameDetailsScreenshotsItemsControl.ItemsSource = screenshotImages;
+            GameDetailsScreenshotsListView.ItemsSource = screenshotImages;
+            GameDetailsScreenshotsListView.SelectedIndex = -1;
             GameDetailsScreenshotsSection.Visibility = screenshotImages.Count == 0
                 ? Visibility.Collapsed
                 : Visibility.Visible;
@@ -484,7 +536,8 @@ namespace CryoPod
             GameDetailsMetadataTextBlock.Text = string.Empty;
             GameDetailsDescriptionTextBlock.Text = string.Empty;
             GameDetailsAboutTextBlock.Text = string.Empty;
-            GameDetailsScreenshotsItemsControl.ItemsSource = null;
+            GameDetailsScreenshotsListView.ItemsSource = null;
+            GameDetailsScreenshotsListView.SelectedIndex = -1;
         }
 
         private static string BuildGameDetailsMetadata(GameLibraryItemViewModel gameLibraryItem)
@@ -551,6 +604,28 @@ namespace CryoPod
             }
         }
 
+        private static void EnsureScreenshotListItemTransform(ListViewItem itemContainer)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+
+            if (visual.ImplicitAnimations is null)
+            {
+                visual.ImplicitAnimations = CreateGameGridItemImplicitAnimations(visual.Compositor);
+            }
+
+            UpdateListItemCenterPoint(itemContainer);
+
+            if (visual.Scale == Vector3.Zero)
+            {
+                visual.Scale = Vector3.One;
+            }
+
+            if (GetScreenshotFocusBorder(itemContainer) is Border focusBorder)
+            {
+                EnsureOpacityAnimation(focusBorder);
+            }
+        }
+
         private static void SetGameGridItemFocusState(GridViewItem itemContainer, bool isFocused)
         {
             EnsureGameGridItemTransform(itemContainer);
@@ -579,6 +654,35 @@ namespace CryoPod
         }
 
         private static void UpdateGameGridItemCenterPoint(GridViewItem itemContainer)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+            visual.CenterPoint = new Vector3(
+                (float)(itemContainer.ActualWidth / 2),
+                (float)(itemContainer.ActualHeight / 2),
+                0f);
+        }
+
+        private static void SetScreenshotListItemFocusState(ListViewItem itemContainer, bool isFocused)
+        {
+            EnsureScreenshotListItemTransform(itemContainer);
+
+            var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
+            var scale = isFocused ? FocusedGameCardScale : 1d;
+            var scaleValue = (float)scale;
+
+            visual.Scale = new Vector3(scaleValue, scaleValue, 1f);
+
+            if (GetScreenshotFocusBorder(itemContainer) is Border focusBorder)
+            {
+                ElementCompositionPreview.GetElementVisual(focusBorder).Opacity = isFocused
+                    ? FocusGlowOpacity
+                    : UnfocusedGlowOpacity;
+            }
+
+            Canvas.SetZIndex(itemContainer, isFocused ? 1 : 0);
+        }
+
+        private static void UpdateListItemCenterPoint(ListViewItem itemContainer)
         {
             var visual = ElementCompositionPreview.GetElementVisual(itemContainer);
             visual.CenterPoint = new Vector3(
@@ -628,6 +732,11 @@ namespace CryoPod
         private static TextBlock? GetGameNameTextBlock(GridViewItem itemContainer)
         {
             return (itemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("GameNameTextBlock") as TextBlock;
+        }
+
+        private static Border? GetScreenshotFocusBorder(ListViewItem itemContainer)
+        {
+            return (itemContainer.ContentTemplateRoot as FrameworkElement)?.FindName("ScreenshotFocusBorder") as Border;
         }
 
     }

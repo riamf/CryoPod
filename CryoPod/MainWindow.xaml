@@ -173,30 +173,48 @@
                             <TextBlock Text="Screenshots"
                                        FontSize="28"
                                        FontWeight="SemiBold" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Hidden"
-                                          HorizontalScrollMode="Enabled"
-                                          VerticalScrollBarVisibility="Disabled"
-                                          VerticalScrollMode="Disabled">
-                                <ItemsControl x:Name="GameDetailsScreenshotsItemsControl">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <ItemsStackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Width="420"
-                                                    Height="236"
-                                                    Margin="0,0,16,0"
+                            <ListView x:Name="GameDetailsScreenshotsListView"
+                                      MinHeight="252"
+                                      ContainerContentChanging="GameDetailsScreenshotsListView_ContainerContentChanging"
+                                      IsItemClickEnabled="False"
+                                      IsTabStop="True"
+                                      SelectionMode="Single"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                      ScrollViewer.HorizontalScrollMode="Enabled"
+                                      ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                      ScrollViewer.VerticalScrollMode="Disabled">
+                                <ListView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <ItemsStackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ListView.ItemsPanel>
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="Margin" Value="0,0,16,0" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="UseSystemFocusVisuals" Value="False" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Width="420"
+                                              Height="236">
+                                            <Border x:Name="ScreenshotFocusBorder"
                                                     CornerRadius="12"
+                                                    BorderThickness="3"
+                                                    BorderBrush="#FF7AC7FF"
+                                                    Background="#127AC7FF"
+                                                    Opacity="0" />
+                                            <Border Margin="4"
+                                                    CornerRadius="10"
                                                     Background="{ThemeResource ControlFillColorSecondaryBrush}">
                                                 <Image Source="{Binding}"
                                                        Stretch="UniformToFill" />
                                             </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

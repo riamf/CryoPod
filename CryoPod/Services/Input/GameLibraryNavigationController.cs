@@ -19,6 +19,7 @@ namespace CryoPod.Services.Input
         private readonly UIElement _inputRoot;
         private readonly GridView _gridView;
         private readonly Button _detailsBackButton;
+        private readonly ListView _detailsScreenshotsListView;
         private readonly Button _exitYesButton;
         private readonly Button _exitNoButton;
         private readonly Func<bool>? _canProcessInput;
@@ -26,11 +27,13 @@ namespace CryoPod.Services.Input
         private bool _isExitPromptActive;
         private bool _isDetailsViewActive;
         private int _lastFocusedItemIndex;
+        private int _focusedDetailsScreenshotIndex = -1;
 
         public GameLibraryNavigationController(
             UIElement inputRoot,
             GridView gridView,
             Button detailsBackButton,
+            ListView detailsScreenshotsListView,
             Button exitYesButton,
             Button exitNoButton,
             DispatcherQueue dispatcherQueue,
@@ -39,6 +42,7 @@ namespace CryoPod.Services.Input
             _inputRoot = inputRoot;
             _gridView = gridView;
             _detailsBackButton = detailsBackButton;
+            _detailsScreenshotsListView = detailsScreenshotsListView;
             _exitYesButton = exitYesButton;
             _exitNoButton = exitNoButton;
             _canProcessInput = canProcessInput;
@@ -78,12 +82,15 @@ namespace CryoPod.Services.Input
         {
             CaptureFocusedGridItemIndex();
             _isDetailsViewActive = true;
+            _focusedDetailsScreenshotIndex = -1;
             return FocusDetailsBackButtonAsync();
         }
 
         public async Task DeactivateDetailsAsync()
         {
             _isDetailsViewActive = false;
+            _focusedDetailsScreenshotIndex = -1;
+            _detailsScreenshotsListView.SelectedIndex = -1;
             await RestoreGridFocusAsync();
         }
 
@@ -176,6 +183,7 @@ namespace CryoPod.Services.Input
 
             if (_isDetailsViewActive)
             {
+                HandleDetailsNavigation(direction);
                 return;
             }
 
@@ -241,7 +249,11 @@ namespace CryoPod.Services.Input
 
             if (_isDetailsViewActive)
             {
-                DetailsClosed?.Invoke(this, EventArgs.Empty);
+                if (ReferenceEquals(FocusManager.GetFocusedElement(_gridView.XamlRoot), _detailsBackButton))
+                {
+                    DetailsClosed?.Invoke(this, EventArgs.Empty);
+                }
+
                 return;
             }
 
@@ -276,8 +288,67 @@ namespace CryoPod.Services.Input
 
         private async Task FocusDetailsBackButtonAsync()
         {
+            _focusedDetailsScreenshotIndex = -1;
+            _detailsScreenshotsListView.SelectedIndex = -1;
             await Task.Yield();
             _detailsBackButton.Focus(FocusState.Programmatic);
+        }
+
+        private void HandleDetailsNavigation(NavigationDirection direction)
+        {
+            if (_focusedDetailsScreenshotIndex < 0)
+            {
+                if (direction == NavigationDirection.Down && _detailsScreenshotsListView.Items.Count > 0)
+                {
+                    _ = FocusDetailsScreenshotAsync(0);
+                }
+
+                return;
+            }
+
+            if (_focusedDetailsScreenshotIndex >= 0)
+            {
+                switch (direction)
+                {
+                    case NavigationDirection.Left when _focusedDetailsScreenshotIndex > 0:
+                        _ = FocusDetailsScreenshotAsync(_focusedDetailsScreenshotIndex - 1);
+                        break;
+                    case NavigationDirection.Right when _focusedDetailsScreenshotIndex < _detailsScreenshotsListView.Items.Count - 1:
+                        _ = FocusDetailsScreenshotAsync(_focusedDetailsScreenshotIndex + 1);
+                        break;
+                    case NavigationDirection.Up:
+                        _ = FocusDetailsBackButtonAsync();
+                        break;
+                }
+
+                return;
+            }
+
+            _ = FocusDetailsBackButtonAsync();
+        }
+
+        private async Task FocusDetailsScreenshotAsync(int index)
+        {
+            if (_detailsScreenshotsListView.Items.Count == 0)
+            {
+                return;
+            }
+
+            var clampedIndex = Math.Clamp(index, 0, _detailsScreenshotsListView.Items.Count - 1);
+            _focusedDetailsScreenshotIndex = clampedIndex;
+            _detailsScreenshotsListView.SelectedIndex = clampedIndex;
+            _detailsScreenshotsListView.UpdateLayout();
+            _detailsScreenshotsListView.ScrollIntoView(_detailsScreenshotsListView.Items[clampedIndex]);
+
+            await Task.Yield();
+
+            if (_detailsScreenshotsListView.ContainerFromIndex(clampedIndex) is ListViewItem screenshotItem)
+            {
+                screenshotItem.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            _detailsScreenshotsListView.Focus(FocusState.Programmatic);
         }
 
         private async Task RestoreGridFocusAsync()
