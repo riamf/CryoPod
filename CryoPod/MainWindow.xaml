@@ -120,15 +120,87 @@
               Visibility="Collapsed">
             <Image x:Name="GameDetailsBackgroundImage"
                    Stretch="UniformToFill" />
-            <Rectangle Fill="#66000000" />
-            <Button x:Name="GameDetailsBackButton"
-                    Margin="24"
-                    Padding="18,10"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    Click="GameDetailsBackButton_Click"
-                    Content="← Back"
-                    Style="{ThemeResource AccentButtonStyle}" />
+            <Rectangle Fill="#AA081018" />
+            <Grid Margin="24,24,24,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Button x:Name="GameDetailsBackButton"
+                        Padding="18,10"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Click="GameDetailsBackButton_Click"
+                        Content="← Back"
+                        Style="{ThemeResource AccentButtonStyle}" />
+                <ScrollViewer Grid.Row="1"
+                              Margin="0,24,0,0"
+                              VerticalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled">
+                    <StackPanel MaxWidth="1180"
+                                HorizontalAlignment="Center"
+                                Spacing="24">
+                        <StackPanel Spacing="8">
+                            <TextBlock x:Name="GameDetailsTitleTextBlock"
+                                       FontSize="42"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="WrapWholeWords" />
+                            <TextBlock x:Name="GameDetailsMetadataTextBlock"
+                                       Opacity="0.84"
+                                       TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="GameDetailsDescriptionSection"
+                                    Spacing="10">
+                            <TextBlock Text="Description"
+                                       FontSize="28"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="GameDetailsDescriptionTextBlock"
+                                       TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="GameDetailsAboutSection"
+                                    Spacing="10">
+                            <TextBlock Text="About the game"
+                                       FontSize="28"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="GameDetailsAboutTextBlock"
+                                       TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="GameDetailsScreenshotsSection"
+                                    Spacing="12">
+                            <TextBlock Text="Screenshots"
+                                       FontSize="28"
+                                       FontWeight="SemiBold" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                                          HorizontalScrollMode="Enabled"
+                                          VerticalScrollBarVisibility="Disabled"
+                                          VerticalScrollMode="Disabled">
+                                <ItemsControl x:Name="GameDetailsScreenshotsItemsControl">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <ItemsStackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="420"
+                                                    Height="236"
+                                                    Margin="0,0,16,0"
+                                                    CornerRadius="12"
+                                                    Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                                                <Image Source="{Binding}"
+                                                       Stretch="UniformToFill" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Grid>
 
         <Grid x:Name="StartupLoaderPanel"

@@ -305,9 +305,7 @@ namespace CryoPod
                         steamAppDetailsByAppId.TryGetValue(game.AppId.Value, out appDetails);
                     }
 
-                    var thumbnailUrl = appDetails?.Data?.HeaderImage ?? appDetails?.Data?.CapsuleImage;
-                    var backgroundUrl = appDetails?.Data?.BackgroundRaw ?? appDetails?.Data?.Background;
-                    return new GameLibraryItemViewModel(game, thumbnailUrl, backgroundUrl);
+                    return new GameLibraryItemViewModel(game, appDetails);
                 })
                 .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
@@ -433,6 +431,7 @@ namespace CryoPod
 
         private async Task ShowGameDetailsAsync(GameLibraryItemViewModel gameLibraryItem)
         {
+            BindGameDetails(gameLibraryItem);
             GameDetailsBackgroundImage.Source = gameLibraryItem.Background;
             GameDetailsOverlay.Visibility = Visibility.Visible;
             await _gameLibraryNavigationController.ActivateDetailsAsync();
@@ -446,8 +445,70 @@ namespace CryoPod
             }
 
             GameDetailsOverlay.Visibility = Visibility.Collapsed;
-            GameDetailsBackgroundImage.Source = null;
+            ClearGameDetails();
             await _gameLibraryNavigationController.DeactivateDetailsAsync();
+        }
+
+        private void BindGameDetails(GameLibraryItemViewModel gameLibraryItem)
+        {
+            GameDetailsTitleTextBlock.Text = gameLibraryItem.Name;
+            GameDetailsMetadataTextBlock.Text = BuildGameDetailsMetadata(gameLibraryItem);
+            GameDetailsMetadataTextBlock.Visibility = string.IsNullOrWhiteSpace(GameDetailsMetadataTextBlock.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+
+            var descriptionText = gameLibraryItem.DetailedDescription ?? gameLibraryItem.ShortDescription ?? string.Empty;
+            GameDetailsDescriptionTextBlock.Text = descriptionText;
+            GameDetailsDescriptionSection.Visibility = string.IsNullOrWhiteSpace(descriptionText)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+
+            GameDetailsAboutTextBlock.Text = gameLibraryItem.AboutTheGame ?? string.Empty;
+            GameDetailsAboutSection.Visibility = string.IsNullOrWhiteSpace(gameLibraryItem.AboutTheGame)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+
+            GameDetailsScreenshotsItemsControl.ItemsSource = gameLibraryItem.Screenshots;
+            GameDetailsScreenshotsSection.Visibility = gameLibraryItem.Screenshots.Count == 0
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        private void ClearGameDetails()
+        {
+            GameDetailsBackgroundImage.Source = null;
+            GameDetailsTitleTextBlock.Text = string.Empty;
+            GameDetailsMetadataTextBlock.Text = string.Empty;
+            GameDetailsDescriptionTextBlock.Text = string.Empty;
+            GameDetailsAboutTextBlock.Text = string.Empty;
+            GameDetailsScreenshotsItemsControl.ItemsSource = null;
+        }
+
+        private static string BuildGameDetailsMetadata(GameLibraryItemViewModel gameLibraryItem)
+        {
+            var metadataParts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(gameLibraryItem.ReleaseDate))
+            {
+                metadataParts.Add($"Release date: {gameLibraryItem.ReleaseDate}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(gameLibraryItem.Developers))
+            {
+                metadataParts.Add($"Developers: {gameLibraryItem.Developers}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(gameLibraryItem.Publishers))
+            {
+                metadataParts.Add($"Publishers: {gameLibraryItem.Publishers}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(gameLibraryItem.Genres))
+            {
+                metadataParts.Add($"Genres: {gameLibraryItem.Genres}");
+            }
+
+            return string.Join("   •   ", metadataParts);
         }
 
         private static void EnsureGameGridItemTransform(GridViewItem itemContainer)

@@ -29,6 +29,12 @@ namespace CryoPod.Models
         [JsonPropertyName("short_description")]
         public string? ShortDescription { get; set; }
 
+        [JsonPropertyName("detailed_description")]
+        public string? DetailedDescription { get; set; }
+
+        [JsonPropertyName("about_the_game")]
+        public string? AboutTheGame { get; set; }
+
         [JsonPropertyName("header_image")]
         public string? HeaderImage { get; set; }
 
