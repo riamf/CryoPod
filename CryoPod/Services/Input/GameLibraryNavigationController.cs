@@ -14,11 +14,18 @@ namespace CryoPod.Services.Input
         public object? Item { get; } = item;
     }
 
+    internal enum DetailsCommand
+    {
+        Back,
+        Run,
+    }
+
     internal sealed class GameLibraryNavigationController : IDisposable
     {
         private readonly UIElement _inputRoot;
         private readonly GridView _gridView;
         private readonly Button _detailsBackButton;
+        private readonly Button _detailsRunButton;
         private readonly ListView _detailsScreenshotsListView;
         private readonly Button _exitYesButton;
         private readonly Button _exitNoButton;
@@ -28,11 +35,13 @@ namespace CryoPod.Services.Input
         private bool _isDetailsViewActive;
         private int _lastFocusedItemIndex;
         private int _focusedDetailsScreenshotIndex = -1;
+        private DetailsCommand _focusedDetailsCommand = DetailsCommand.Run;
 
         public GameLibraryNavigationController(
             UIElement inputRoot,
             GridView gridView,
             Button detailsBackButton,
+            Button detailsRunButton,
             ListView detailsScreenshotsListView,
             Button exitYesButton,
             Button exitNoButton,
@@ -42,6 +51,7 @@ namespace CryoPod.Services.Input
             _inputRoot = inputRoot;
             _gridView = gridView;
             _detailsBackButton = detailsBackButton;
+            _detailsRunButton = detailsRunButton;
             _detailsScreenshotsListView = detailsScreenshotsListView;
             _exitYesButton = exitYesButton;
             _exitNoButton = exitNoButton;
@@ -59,6 +69,7 @@ namespace CryoPod.Services.Input
         public event EventHandler? ExitCanceled;
         public event EventHandler<GameLibraryItemInvokedEventArgs>? DetailsRequested;
         public event EventHandler? DetailsClosed;
+        public event EventHandler? DetailsRunRequested;
 
         public async Task FocusFirstItemAsync()
         {
@@ -83,7 +94,8 @@ namespace CryoPod.Services.Input
             CaptureFocusedGridItemIndex();
             _isDetailsViewActive = true;
             _focusedDetailsScreenshotIndex = -1;
-            return FocusDetailsBackButtonAsync();
+            _focusedDetailsCommand = DetailsCommand.Run;
+            return FocusDetailsCommandButtonAsync(_focusedDetailsCommand);
         }
 
         public async Task DeactivateDetailsAsync()
@@ -249,11 +261,18 @@ namespace CryoPod.Services.Input
 
             if (_isDetailsViewActive)
             {
-                if (ReferenceEquals(FocusManager.GetFocusedElement(_gridView.XamlRoot), _detailsBackButton))
+                if (_focusedDetailsScreenshotIndex >= 0)
                 {
-                    DetailsClosed?.Invoke(this, EventArgs.Empty);
+                    return;
                 }
 
+                if (_focusedDetailsCommand == DetailsCommand.Back)
+                {
+                    DetailsClosed?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                DetailsRunRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
@@ -286,21 +305,31 @@ namespace CryoPod.Services.Input
             button.Focus(FocusState.Programmatic);
         }
 
-        private async Task FocusDetailsBackButtonAsync()
+        private async Task FocusDetailsCommandButtonAsync(DetailsCommand command)
         {
             _focusedDetailsScreenshotIndex = -1;
             _detailsScreenshotsListView.SelectedIndex = -1;
+            _focusedDetailsCommand = command;
             await Task.Yield();
-            _detailsBackButton.Focus(FocusState.Programmatic);
+            var targetButton = command == DetailsCommand.Run ? _detailsRunButton : _detailsBackButton;
+            targetButton.Focus(FocusState.Programmatic);
         }
 
         private void HandleDetailsNavigation(NavigationDirection direction)
         {
             if (_focusedDetailsScreenshotIndex < 0)
             {
-                if (direction == NavigationDirection.Down && _detailsScreenshotsListView.Items.Count > 0)
+                switch (direction)
                 {
-                    _ = FocusDetailsScreenshotAsync(0);
+                    case NavigationDirection.Left:
+                        _ = FocusDetailsCommandButtonAsync(DetailsCommand.Back);
+                        break;
+                    case NavigationDirection.Right:
+                        _ = FocusDetailsCommandButtonAsync(DetailsCommand.Run);
+                        break;
+                    case NavigationDirection.Down when _detailsScreenshotsListView.Items.Count > 0:
+                        _ = FocusDetailsScreenshotAsync(0);
+                        break;
                 }
 
                 return;
@@ -317,14 +346,14 @@ namespace CryoPod.Services.Input
                         _ = FocusDetailsScreenshotAsync(_focusedDetailsScreenshotIndex + 1);
                         break;
                     case NavigationDirection.Up:
-                        _ = FocusDetailsBackButtonAsync();
+                        _ = FocusDetailsCommandButtonAsync(_focusedDetailsCommand);
                         break;
                 }
 
                 return;
             }
 
-            _ = FocusDetailsBackButtonAsync();
+            _ = FocusDetailsCommandButtonAsync(_focusedDetailsCommand);
         }
 
         private async Task FocusDetailsScreenshotAsync(int index)

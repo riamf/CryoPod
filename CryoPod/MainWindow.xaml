@@ -126,13 +126,29 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Button x:Name="GameDetailsBackButton"
-                        Padding="18,10"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Top"
-                        Click="GameDetailsBackButton_Click"
-                        Content="← Back"
-                        Style="{ThemeResource AccentButtonStyle}" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="GameDetailsBackButton"
+                            Grid.Column="0"
+                            Padding="18,10"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Click="GameDetailsBackButton_Click"
+                            Content="← Back"
+                            Style="{ThemeResource AccentButtonStyle}" />
+                    <Button x:Name="GameDetailsRunButton"
+                            Grid.Column="2"
+                            Padding="18,10"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Click="GameDetailsRunButton_Click"
+                            Content="▶ Run"
+                            Style="{ThemeResource AccentButtonStyle}" />
+                </Grid>
                 <ScrollViewer Grid.Row="1"
                               Margin="0,24,0,0"
                               VerticalScrollBarVisibility="Hidden"

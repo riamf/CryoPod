@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using CryoPod.Models;
 using CryoPod.Services.GameExplorer;
 using CryoPod.Services.Input;
+using CryoPod.Services.Launch;
 using CryoPod.Services.Steam;
 using CryoPod.ViewModels;
 using Microsoft.UI.Composition;
@@ -55,7 +56,9 @@ namespace CryoPod
         private IReadOnlyList<SteamAppDetailsResponse> _steamAppDetails = [];
         private readonly ISteamAppDetailsService _steamAppDetailsService = new SteamAppDetailsService();
         private readonly ISteamAppDetailsCacheService _steamAppDetailsCacheService = new SteamAppDetailsCacheService();
+        private readonly GameLaunchService _gameLaunchService = new GameLaunchService();
         private readonly GameLibraryNavigationController _gameLibraryNavigationController;
+        private GameLibraryItemViewModel? _activeGameDetailsItem;
 
         public MainWindow()
         {
@@ -65,6 +68,7 @@ namespace CryoPod
                 RootGrid,
                 GamesGridView,
                 GameDetailsBackButton,
+                GameDetailsRunButton,
                 GameDetailsScreenshotsListView,
                 ExitPromptYesButton,
                 ExitPromptNoButton,
@@ -72,6 +76,7 @@ namespace CryoPod
                 CanProcessMainViewInput);
             _gameLibraryNavigationController.DetailsRequested += GameLibraryNavigationController_DetailsRequested;
             _gameLibraryNavigationController.DetailsClosed += GameLibraryNavigationController_DetailsClosed;
+            _gameLibraryNavigationController.DetailsRunRequested += GameLibraryNavigationController_DetailsRunRequested;
             _gameLibraryNavigationController.ExitRequested += GameLibraryNavigationController_ExitRequested;
             _gameLibraryNavigationController.ExitConfirmed += GameLibraryNavigationController_ExitConfirmed;
             _gameLibraryNavigationController.ExitCanceled += GameLibraryNavigationController_ExitCanceled;
@@ -105,6 +110,7 @@ namespace CryoPod
         {
             _gameLibraryNavigationController.DetailsRequested -= GameLibraryNavigationController_DetailsRequested;
             _gameLibraryNavigationController.DetailsClosed -= GameLibraryNavigationController_DetailsClosed;
+            _gameLibraryNavigationController.DetailsRunRequested -= GameLibraryNavigationController_DetailsRunRequested;
             _gameLibraryNavigationController.ExitRequested -= GameLibraryNavigationController_ExitRequested;
             _gameLibraryNavigationController.ExitConfirmed -= GameLibraryNavigationController_ExitConfirmed;
             _gameLibraryNavigationController.ExitCanceled -= GameLibraryNavigationController_ExitCanceled;
@@ -425,6 +431,11 @@ namespace CryoPod
             await HideGameDetailsAsync();
         }
 
+        private async void GameLibraryNavigationController_DetailsRunRequested(object? sender, EventArgs e)
+        {
+            await LaunchActiveDetailsGameAsync();
+        }
+
         private async void GameLibraryNavigationController_ExitRequested(object? sender, EventArgs e)
         {
             await ShowExitPromptAsync();
@@ -455,6 +466,11 @@ namespace CryoPod
             await HideGameDetailsAsync();
         }
 
+        private async void GameDetailsRunButton_Click(object sender, RoutedEventArgs e)
+        {
+            await LaunchActiveDetailsGameAsync();
+        }
+
         private async Task ShowExitPromptAsync()
         {
             if (ExitPromptOverlay.Visibility == Visibility.Visible)
@@ -479,6 +495,7 @@ namespace CryoPod
 
         private async Task ShowGameDetailsAsync(GameLibraryItemViewModel gameLibraryItem)
         {
+            _activeGameDetailsItem = gameLibraryItem;
             BindGameDetails(gameLibraryItem);
             GameDetailsOverlay.Visibility = Visibility.Visible;
             await _gameLibraryNavigationController.ActivateDetailsAsync();
@@ -493,6 +510,7 @@ namespace CryoPod
 
             GameDetailsOverlay.Visibility = Visibility.Collapsed;
             ClearGameDetails();
+            _activeGameDetailsItem = null;
             await _gameLibraryNavigationController.DeactivateDetailsAsync();
         }
 
@@ -538,6 +556,19 @@ namespace CryoPod
             GameDetailsAboutTextBlock.Text = string.Empty;
             GameDetailsScreenshotsListView.ItemsSource = null;
             GameDetailsScreenshotsListView.SelectedIndex = -1;
+        }
+
+        private async Task LaunchActiveDetailsGameAsync()
+        {
+            if (_activeGameDetailsItem is null)
+            {
+                return;
+            }
+
+            var launchSucceeded = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
+            Debug.WriteLine(launchSucceeded
+                ? $"Launched {_activeGameDetailsItem.Name}."
+                : $"Failed to launch {_activeGameDetailsItem.Name}.");
         }
 
         private static string BuildGameDetailsMetadata(GameLibraryItemViewModel gameLibraryItem)
