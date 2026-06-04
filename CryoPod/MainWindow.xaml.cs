@@ -60,6 +60,7 @@ namespace CryoPod
         private readonly GameLaunchService _gameLaunchService = new GameLaunchService();
         private readonly GameLibraryNavigationController _gameLibraryNavigationController;
         private GlobalKeyboardShortcutService? _globalKeyboardShortcutService;
+        private Process? _gameProcess;
         private GameLibraryItemViewModel? _activeGameDetailsItem;
         private nint _windowHandle;
         private bool _windowInitialized;
@@ -132,6 +133,7 @@ namespace CryoPod
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             Activated -= MainWindow_Activated;
+            UntrackGameProcess();
             _foregroundProcessControlService.Dispose();
             if (_globalKeyboardShortcutService is not null)
             {
@@ -605,10 +607,58 @@ namespace CryoPod
                 return;
             }
 
-            var launchSucceeded = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
-            Debug.WriteLine(launchSucceeded
-                ? $"Launched {_activeGameDetailsItem.Name}."
-                : $"Failed to launch {_activeGameDetailsItem.Name}.");
+            var (launchSucceeded, gameProcess) = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
+            if (gameProcess is not null)
+            {
+                TrackGameProcess(gameProcess);
+            }
+
+            Debug.WriteLine(!launchSucceeded
+                ? $"Failed to launch {_activeGameDetailsItem.Name}."
+                : gameProcess is null
+                    ? $"Launched {_activeGameDetailsItem.Name}, but the game process could not be identified."
+                    : $"Launched {_activeGameDetailsItem.Name} with process {gameProcess.ProcessName} ({gameProcess.Id}).");
+        }
+
+        private void TrackGameProcess(Process gameProcess)
+        {
+            UntrackGameProcess();
+
+            _gameProcess = gameProcess;
+            _gameProcess.EnableRaisingEvents = true;
+            _gameProcess.Exited += GameProcess_Exited;
+        }
+
+        private void UntrackGameProcess()
+        {
+            if (_gameProcess is null)
+            {
+                return;
+            }
+
+            _gameProcess.Exited -= GameProcess_Exited;
+            _gameProcess.Dispose();
+            _gameProcess = null;
+        }
+
+        private void GameProcess_Exited(object? sender, EventArgs e)
+        {
+            if (sender is not Process exitedProcess)
+            {
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_gameProcess?.Id != exitedProcess.Id)
+                {
+                    return;
+                }
+
+                _foregroundProcessControlService.ClearSuspendedProcessIfMatches(exitedProcess.Id);
+                Debug.WriteLine($"Tracked game process exited: {exitedProcess.ProcessName} ({exitedProcess.Id}).");
+                UntrackGameProcess();
+            });
         }
 
         private static string BuildGameDetailsMetadata(GameLibraryItemViewModel gameLibraryItem)

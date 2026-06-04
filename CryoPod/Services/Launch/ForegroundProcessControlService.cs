@@ -21,6 +21,14 @@ namespace CryoPod.Services.Launch
             return TrySuspendForegroundProcessAndActivateWindow(appWindowHandle, appProcessId);
         }
 
+        public void ClearSuspendedProcessIfMatches(int processId)
+        {
+            if (_suspendedProcessId == processId)
+            {
+                ClearSuspendedProcessState();
+            }
+        }
+
         private bool TrySuspendForegroundProcessAndActivateWindow(IntPtr appWindowHandle, int appProcessId)
         {
             var foregroundWindowHandle = NativeMethods.GetForegroundWindow();
