@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:CryoPod"
+    xmlns:viewModels="using:CryoPod.ViewModels"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -236,6 +237,50 @@
                 </ScrollViewer>
             </Grid>
         </Grid>
+
+        <ListView x:Name="SuspendedGamesList"
+                  Margin="24"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Bottom"
+                  MaxHeight="260"
+                  Visibility="Collapsed"
+                  ItemsSource="{x:Bind SuspendedGamesView, Mode=OneWay}"
+                  SelectionMode="None"
+                  IsItemClickEnabled="False"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollMode="Enabled">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:SuspendedGameViewModel">
+                    <Border Margin="0,0,0,12"
+                            Padding="16"
+                            CornerRadius="12"
+                            Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{x:Bind Name}"
+                                           FontSize="18"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind SuspendedSince}"
+                                           Opacity="0.72"
+                                           FontSize="12" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Margin="16,0,0,0"
+                                    Padding="18,10"
+                                    VerticalAlignment="Center"
+                                    Click="OnResumeClicked"
+                                    Tag="{x:Bind Id}"
+                                    Content="Resume"
+                                    Style="{ThemeResource AccentButtonStyle}" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
 
         <Grid x:Name="StartupLoaderPanel"
               Background="Transparent"

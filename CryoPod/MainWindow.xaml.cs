@@ -1,12 +1,14 @@
 using System;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
+using CryoPod.Interop;
 using CryoPod.Models;
 using CryoPod.Services.GameExplorer;
 using CryoPod.Services.Input;
@@ -38,6 +40,8 @@ namespace CryoPod
     /// </summary>
     public sealed partial class MainWindow : Window
     {
+        private sealed record SuspendedGame(Guid Id, string Name, Process Process, IntPtr SuspendedHandle, DateTimeOffset SuspendedAt);
+
         private const int GamesPerRow = 3;
         private const double GameCardAspectRatio = 420d / 203d;
         private const double GameCardTextHeight = 56;
@@ -67,12 +71,16 @@ namespace CryoPod
         private readonly ISteamAppDetailsCacheService _steamAppDetailsCacheService = new SteamAppDetailsCacheService();
         private readonly GameLaunchService _gameLaunchService = new GameLaunchService();
         private readonly GameLibraryNavigationController _gameLibraryNavigationController;
+        private readonly Dictionary<int, bool> _safeHotkeyPathByProcessId = [];
+        private readonly List<SuspendedGame> _suspendedGames = [];
         private GlobalKeyboardShortcutService? _globalKeyboardShortcutService;
-        private Process? _gameProcess;
-        private bool _trackedGameRequiresSafeHotkeyPath;
+        private Process? _activeGame;
+        private string? _activeGameName;
         private GameLibraryItemViewModel? _activeGameDetailsItem;
         private nint _windowHandle;
         private bool _windowInitialized;
+
+        public ObservableCollection<SuspendedGameViewModel> SuspendedGamesView { get; } = [];
 
         public MainWindow()
         {
@@ -142,8 +150,24 @@ namespace CryoPod
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             Activated -= MainWindow_Activated;
-            UntrackGameProcess();
-            _foregroundProcessControlService.Dispose();
+
+            if (_activeGame is not null)
+            {
+                _activeGame.Exited -= GameProcess_Exited;
+                _activeGame.Dispose();
+                _activeGame = null;
+            }
+
+            foreach (var suspendedGame in _suspendedGames)
+            {
+                suspendedGame.Process.Exited -= GameProcess_Exited;
+                _foregroundProcessControlService.ResumeSuspendedProcessForCleanup(suspendedGame.SuspendedHandle);
+                suspendedGame.Process.Dispose();
+            }
+
+            _suspendedGames.Clear();
+            _safeHotkeyPathByProcessId.Clear();
+
             if (_globalKeyboardShortcutService is not null)
             {
                 _globalKeyboardShortcutService.ShortcutPressed -= GlobalKeyboardShortcutService_ShortcutPressed;
@@ -223,33 +247,19 @@ namespace CryoPod
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                var actionSucceeded = false;
-
-                if (_foregroundProcessControlService.HasSuspendedProcess)
+                if (SuspendActiveGame(out var usedSafePath, out var antiCheatDetected))
                 {
-                    actionSucceeded = _foregroundProcessControlService.ToggleTrackedProcessSuspension(_windowHandle, _gameProcess);
-                    Debug.WriteLine(actionSucceeded
-                        ? "Global hotkey resumed the suspended game."
-                        : "Global resume shortcut was ignored or failed.");
-                    return;
-                }
-
-                var antiCheatDetected = IsKnownAntiCheatRunning();
-                if (_trackedGameRequiresSafeHotkeyPath || antiCheatDetected)
-                {
-                    actionSucceeded = _foregroundProcessControlService.TryMinimizeTrackedOrForegroundProcessAndActivateWindow(_windowHandle, Environment.ProcessId, _gameProcess);
-                    Debug.WriteLine(actionSucceeded
+                    BringLauncherToFront();
+                    UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+                    Debug.WriteLine(usedSafePath
                         ? antiCheatDetected
                             ? "Global hotkey used the safe minimize-only path because anti-cheat was detected."
                             : "Global hotkey used the safe minimize-only path for an online multiplayer title."
-                        : "Global safe shortcut was ignored or failed.");
+                        : "Global hotkey suspended the tracked game.");
                     return;
                 }
 
-                actionSucceeded = _foregroundProcessControlService.ToggleTrackedProcessSuspension(_windowHandle, _gameProcess);
-                Debug.WriteLine(actionSucceeded
-                    ? "Global hotkey suspended the tracked game."
-                    : "Global suspend shortcut was ignored, unavailable, or failed.");
+                Debug.WriteLine("Global suspend shortcut was ignored, unavailable, or failed.");
             });
         }
 
@@ -545,6 +555,30 @@ namespace CryoPod
             await LaunchActiveDetailsGameAsync();
         }
 
+        private async void OnResumeClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button)
+            {
+                return;
+            }
+
+            Guid suspendedGameId;
+            if (button.Tag is Guid tagGuid)
+            {
+                suspendedGameId = tagGuid;
+            }
+            else if (button.Tag is string tagText && Guid.TryParse(tagText, out var parsedGuid))
+            {
+                suspendedGameId = parsedGuid;
+            }
+            else
+            {
+                return;
+            }
+
+            await ResumeSuspendedGameAsync(suspendedGameId);
+        }
+
         private async Task ShowExitPromptAsync()
         {
             if (ExitPromptOverlay.Visibility == Visibility.Visible)
@@ -639,15 +673,22 @@ namespace CryoPod
                 return;
             }
 
-            _trackedGameRequiresSafeHotkeyPath = _activeGameDetailsItem.IsOnlineMultiplayer;
+            if (_activeGame is not null && !HasProcessExited(_activeGame))
+            {
+                if (!SuspendActiveGame(out _, out _))
+                {
+                    Debug.WriteLine("Launching a new game was blocked because the active game could not be paused.");
+                    return;
+                }
+
+                BringLauncherToFront();
+                UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            }
+
             var (launchSucceeded, gameProcess) = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
             if (gameProcess is not null)
             {
-                TrackGameProcess(gameProcess);
-            }
-            else if (!launchSucceeded)
-            {
-                _trackedGameRequiresSafeHotkeyPath = false;
+                TrackActiveGame(gameProcess, _activeGameDetailsItem.Name, _activeGameDetailsItem.IsOnlineMultiplayer);
             }
 
             Debug.WriteLine(!launchSucceeded
@@ -657,27 +698,21 @@ namespace CryoPod
                     : $"Launched {_activeGameDetailsItem.Name} with process {gameProcess.ProcessName} ({gameProcess.Id}).");
         }
 
-        private void TrackGameProcess(Process gameProcess)
+        private void TrackActiveGame(Process gameProcess, string gameName, bool requiresSafeHotkeyPath)
         {
-            UntrackGameProcess();
-
-            _gameProcess = gameProcess;
-            _gameProcess.EnableRaisingEvents = true;
-            _gameProcess.Exited += GameProcess_Exited;
-        }
-
-        private void UntrackGameProcess()
-        {
-            if (_gameProcess is null)
+            if (_activeGame is not null && _activeGame.Id != gameProcess.Id)
             {
-                _trackedGameRequiresSafeHotkeyPath = false;
-                return;
+                _activeGame.Exited -= GameProcess_Exited;
+                _activeGame.Dispose();
             }
 
-            _gameProcess.Exited -= GameProcess_Exited;
-            _gameProcess.Dispose();
-            _gameProcess = null;
-            _trackedGameRequiresSafeHotkeyPath = false;
+            _activeGame = gameProcess;
+            _activeGameName = gameName;
+            _safeHotkeyPathByProcessId[gameProcess.Id] = requiresSafeHotkeyPath;
+            _activeGame.EnableRaisingEvents = true;
+            _activeGame.Exited -= GameProcess_Exited;
+            _activeGame.Exited += GameProcess_Exited;
+            UpdateSuspendedStateUi(_suspendedGames.Count > 0);
         }
 
         private void GameProcess_Exited(object? sender, EventArgs e)
@@ -689,15 +724,226 @@ namespace CryoPod
 
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (_gameProcess?.Id != exitedProcess.Id)
+                if (_activeGame?.Id == exitedProcess.Id)
                 {
-                    return;
+                    _activeGame.Exited -= GameProcess_Exited;
+                    _activeGame.Dispose();
+                    _activeGame = null;
+                    _activeGameName = null;
+                }
+                else if (TryRemoveSuspendedGame(exitedProcess.Id, out var suspendedGame))
+                {
+                    suspendedGame.Process.Exited -= GameProcess_Exited;
+                    if (suspendedGame.SuspendedHandle != IntPtr.Zero)
+                    {
+                        NativeMethods.CloseHandle(suspendedGame.SuspendedHandle);
+                    }
+
+                    suspendedGame.Process.Dispose();
                 }
 
-                _foregroundProcessControlService.ClearSuspendedProcessIfMatches(exitedProcess.Id);
+                _safeHotkeyPathByProcessId.Remove(exitedProcess.Id);
+
                 Debug.WriteLine($"Tracked game process exited: {exitedProcess.ProcessName} ({exitedProcess.Id}).");
-                UntrackGameProcess();
+                UpdateSuspendedStateUi(_suspendedGames.Count > 0);
             });
+        }
+
+        private async Task ResumeSuspendedGameAsync(Guid suspendedGameId)
+        {
+            // This method updates WinUI controls and must run on the UI thread.
+            if (_activeGame is not null && !HasProcessExited(_activeGame))
+            {
+                await ShowActiveGameAlreadyRunningDialogAsync();
+                return;
+            }
+
+            if (!TryGetSuspendedGame(suspendedGameId, out var suspendedGame, out var suspendedGameIndex))
+            {
+                UpdateSuspendedStateUi(false);
+                return;
+            }
+
+            var resumeSucceeded = _foregroundProcessControlService.TryResumeSuspendedProcessAndActivateWindow(suspendedGame.Process, suspendedGame.SuspendedHandle);
+            if (resumeSucceeded)
+            {
+                _suspendedGames.RemoveAt(suspendedGameIndex);
+                if (suspendedGame.SuspendedHandle != IntPtr.Zero)
+                {
+                    NativeMethods.CloseHandle(suspendedGame.SuspendedHandle);
+                }
+
+                TrackActiveGame(
+                    suspendedGame.Process,
+                    suspendedGame.Name,
+                    _safeHotkeyPathByProcessId.TryGetValue(suspendedGame.Process.Id, out var requiresSafeHotkeyPath) && requiresSafeHotkeyPath);
+            }
+
+            UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            Debug.WriteLine(resumeSucceeded
+                ? $"Resume button resumed {suspendedGame.Name}."
+                : "Resume button could not resume the suspended game.");
+        }
+
+        private void UpdateSuspendedStateUi(bool isSuspended)
+        {
+            // This method updates WinUI controls and must run on the UI thread.
+            RefreshSuspendedGamesList();
+            SuspendedGamesList.Visibility = isSuspended ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private async Task ShowActiveGameAlreadyRunningDialogAsync()
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = "Pause the active game first",
+                Content = "Only one active tracked game is supported at a time. Pause or close the current game before launching another one.",
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+            };
+
+            await dialog.ShowAsync();
+        }
+
+        private bool SuspendActiveGame(out bool usedSafePath, out bool antiCheatDetected)
+        {
+            usedSafePath = false;
+            antiCheatDetected = false;
+
+            if (_activeGame is null || HasProcessExited(_activeGame))
+            {
+                return false;
+            }
+
+            IntPtr activeGameWindowHandle;
+
+            try
+            {
+                _activeGame.Refresh();
+                activeGameWindowHandle = _activeGame.MainWindowHandle;
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Failed to inspect the active game before suspension: {exception}");
+                return false;
+            }
+
+            if (activeGameWindowHandle == IntPtr.Zero)
+            {
+                Debug.WriteLine("Suspending the active game was skipped because it does not have a main window handle.");
+                return false;
+            }
+
+            antiCheatDetected = IsKnownAntiCheatRunning();
+            usedSafePath = RequiresSafeHotkeyPath(_activeGame) || antiCheatDetected;
+
+            var activeGame = _activeGame;
+            var suspendedHandle = IntPtr.Zero;
+            var actionSucceeded = usedSafePath
+                ? _foregroundProcessControlService.TryMinimizeTrackedOrForegroundProcessAndActivateWindow(_windowHandle, Environment.ProcessId, activeGame)
+                : _foregroundProcessControlService.TrySuspendTrackedProcessAndActivateWindow(_windowHandle, activeGame, out suspendedHandle);
+
+            if (!actionSucceeded)
+            {
+                return false;
+            }
+
+            _suspendedGames.Add(new SuspendedGame(Guid.NewGuid(), GetTrackedGameName(activeGame), activeGame, suspendedHandle, DateTimeOffset.Now));
+            _activeGame = null;
+            _activeGameName = null;
+            UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            return true;
+        }
+
+        private void BringLauncherToFront()
+        {
+            NativeMethods.ShowWindow(_windowHandle, NativeMethods.SW_RESTORE);
+            NativeMethods.SetForegroundWindow(_windowHandle);
+            NativeMethods.BringWindowToTop(_windowHandle);
+        }
+
+        private string GetTrackedGameName(Process gameProcess)
+        {
+            if (_activeGame?.Id == gameProcess.Id && !string.IsNullOrWhiteSpace(_activeGameName))
+            {
+                return _activeGameName;
+            }
+
+            try
+            {
+                return string.IsNullOrWhiteSpace(gameProcess.ProcessName) ? "Game" : gameProcess.ProcessName;
+            }
+            catch
+            {
+                return "Game";
+            }
+        }
+
+        private bool RequiresSafeHotkeyPath(Process gameProcess)
+        {
+            return _safeHotkeyPathByProcessId.TryGetValue(gameProcess.Id, out var requiresSafeHotkeyPath)
+                && requiresSafeHotkeyPath;
+        }
+
+        private bool TryRemoveSuspendedGame(int processId, out SuspendedGame suspendedGame)
+        {
+            for (var index = 0; index < _suspendedGames.Count; index++)
+            {
+                if (_suspendedGames[index].Process.Id == processId)
+                {
+                    suspendedGame = _suspendedGames[index];
+                    _suspendedGames.RemoveAt(index);
+                    return true;
+                }
+            }
+
+            suspendedGame = null!;
+            return false;
+        }
+
+        private bool TryGetSuspendedGame(Guid suspendedGameId, out SuspendedGame suspendedGame, out int suspendedGameIndex)
+        {
+            for (var index = 0; index < _suspendedGames.Count; index++)
+            {
+                if (_suspendedGames[index].Id == suspendedGameId)
+                {
+                    suspendedGame = _suspendedGames[index];
+                    suspendedGameIndex = index;
+                    return true;
+                }
+            }
+
+            suspendedGame = null!;
+            suspendedGameIndex = -1;
+            return false;
+        }
+
+        private void RefreshSuspendedGamesList()
+        {
+            SuspendedGamesView.Clear();
+
+            foreach (var suspendedGame in _suspendedGames)
+            {
+                SuspendedGamesView.Add(new SuspendedGameViewModel(
+                    suspendedGame.Id,
+                    suspendedGame.Name,
+                    suspendedGame.SuspendedAt));
+            }
+
+            SuspendedGamesList.Visibility = _suspendedGames.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static bool HasProcessExited(Process process)
+        {
+            try
+            {
+                return process.HasExited;
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         private static bool IsKnownAntiCheatRunning()
