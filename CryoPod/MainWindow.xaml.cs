@@ -54,15 +54,20 @@ namespace CryoPod
 
         private IReadOnlyList<InstalledGame> _installedGames = [];
         private IReadOnlyList<SteamAppDetailsResponse> _steamAppDetails = [];
+        private readonly ForegroundProcessControlService _foregroundProcessControlService = new ForegroundProcessControlService();
         private readonly ISteamAppDetailsService _steamAppDetailsService = new SteamAppDetailsService();
         private readonly ISteamAppDetailsCacheService _steamAppDetailsCacheService = new SteamAppDetailsCacheService();
         private readonly GameLaunchService _gameLaunchService = new GameLaunchService();
         private readonly GameLibraryNavigationController _gameLibraryNavigationController;
+        private GlobalKeyboardShortcutService? _globalKeyboardShortcutService;
         private GameLibraryItemViewModel? _activeGameDetailsItem;
+        private nint _windowHandle;
+        private bool _windowInitialized;
 
         public MainWindow()
         {
             InitializeComponent();
+            Activated += MainWindow_Activated;
             Closed += MainWindow_Closed;
             _gameLibraryNavigationController = new GameLibraryNavigationController(
                 RootGrid,
@@ -80,7 +85,25 @@ namespace CryoPod
             _gameLibraryNavigationController.ExitRequested += GameLibraryNavigationController_ExitRequested;
             _gameLibraryNavigationController.ExitConfirmed += GameLibraryNavigationController_ExitConfirmed;
             _gameLibraryNavigationController.ExitCanceled += GameLibraryNavigationController_ExitCanceled;
+        }
+
+        private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            if (_windowInitialized)
+            {
+                return;
+            }
+
+            _windowHandle = WindowNative.GetWindowHandle(this);
+            if (_windowHandle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            _globalKeyboardShortcutService = new GlobalKeyboardShortcutService(_windowHandle);
+            _globalKeyboardShortcutService.ShortcutPressed += GlobalKeyboardShortcutService_ShortcutPressed;
             SetFullScreen();
+            _windowInitialized = true;
         }
 
         private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -108,6 +131,12 @@ namespace CryoPod
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            Activated -= MainWindow_Activated;
+            if (_globalKeyboardShortcutService is not null)
+            {
+                _globalKeyboardShortcutService.ShortcutPressed -= GlobalKeyboardShortcutService_ShortcutPressed;
+                _globalKeyboardShortcutService.Dispose();
+            }
             _gameLibraryNavigationController.DetailsRequested -= GameLibraryNavigationController_DetailsRequested;
             _gameLibraryNavigationController.DetailsClosed -= GameLibraryNavigationController_DetailsClosed;
             _gameLibraryNavigationController.DetailsRunRequested -= GameLibraryNavigationController_DetailsRunRequested;
@@ -172,11 +201,21 @@ namespace CryoPod
 
         private void SetFullScreen()
         {
-            var windowHandle = WindowNative.GetWindowHandle(this);
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_windowHandle);
             var appWindow = AppWindow.GetFromWindowId(windowId);
 
             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+        }
+
+        private void GlobalKeyboardShortcutService_ShortcutPressed(object? sender, EventArgs e)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                var actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
+                Debug.WriteLine(actionSucceeded
+                    ? "Global hotkey executed."
+                    : "Global suspend shortcut was ignored, unavailable, or failed.");
+            });
         }
 
         private async Task RunStartupWorkAsync()
