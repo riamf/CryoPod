@@ -108,7 +108,7 @@ namespace CryoPod.Services.Launch
             {
                 if (windowHandle != IntPtr.Zero)
                 {
-                    NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_HIDE);
+                    NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_MINIMIZE);
                 }
             }
 

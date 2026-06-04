@@ -40,7 +40,7 @@ namespace CryoPod
     /// </summary>
     public sealed partial class MainWindow : Window
     {
-        private sealed record SuspendedGame(Guid Id, string Name, Process Process, IntPtr SuspendedHandle, DateTimeOffset SuspendedAt);
+        private sealed record SuspendedGame(Guid Id, InstalledGame InstalledGame, string Name, Process Process, IntPtr SuspendedHandle, DateTimeOffset SuspendedAt);
 
         private const int GamesPerRow = 3;
         private const double GameCardAspectRatio = 420d / 203d;
@@ -76,6 +76,7 @@ namespace CryoPod
         private GlobalKeyboardShortcutService? _globalKeyboardShortcutService;
         private Process? _activeGame;
         private string? _activeGameName;
+        private InstalledGame? _activeInstalledGame;
         private GameLibraryItemViewModel? _activeGameDetailsItem;
         private nint _windowHandle;
         private bool _windowInitialized;
@@ -109,6 +110,8 @@ namespace CryoPod
         {
             if (_windowInitialized)
             {
+                RefreshTrackedGameState();
+                UpdateGameDetailsActionButton();
                 return;
             }
 
@@ -122,6 +125,8 @@ namespace CryoPod
             _globalKeyboardShortcutService.ShortcutPressed += GlobalKeyboardShortcutService_ShortcutPressed;
             SetFullScreen();
             _windowInitialized = true;
+            RefreshTrackedGameState();
+            UpdateGameDetailsActionButton();
         }
 
         private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -518,7 +523,7 @@ namespace CryoPod
 
         private async void GameLibraryNavigationController_DetailsRunRequested(object? sender, EventArgs e)
         {
-            await LaunchActiveDetailsGameAsync();
+            await ExecuteActiveDetailsActionAsync();
         }
 
         private async void GameLibraryNavigationController_ExitRequested(object? sender, EventArgs e)
@@ -553,7 +558,7 @@ namespace CryoPod
 
         private async void GameDetailsRunButton_Click(object sender, RoutedEventArgs e)
         {
-            await LaunchActiveDetailsGameAsync();
+            await ExecuteActiveDetailsActionAsync();
         }
 
         private async void OnResumeClicked(object sender, RoutedEventArgs e)
@@ -604,8 +609,10 @@ namespace CryoPod
 
         private async Task ShowGameDetailsAsync(GameLibraryItemViewModel gameLibraryItem)
         {
+            RefreshTrackedGameState();
             _activeGameDetailsItem = gameLibraryItem;
             BindGameDetails(gameLibraryItem);
+            UpdateGameDetailsActionButton();
             GameDetailsOverlay.Visibility = Visibility.Visible;
             await _gameLibraryNavigationController.ActivateDetailsAsync();
         }
@@ -620,6 +627,7 @@ namespace CryoPod
             GameDetailsOverlay.Visibility = Visibility.Collapsed;
             ClearGameDetails();
             _activeGameDetailsItem = null;
+            UpdateGameDetailsActionButton();
             await _gameLibraryNavigationController.DeactivateDetailsAsync();
         }
 
@@ -667,6 +675,32 @@ namespace CryoPod
             GameDetailsScreenshotsListView.SelectedIndex = -1;
         }
 
+        private async Task ExecuteActiveDetailsActionAsync()
+        {
+            if (TryGetSuspendedGame(_activeGameDetailsItem?.InstalledGame, out var suspendedGameId))
+            {
+                await ResumeSuspendedGameAsync(suspendedGameId);
+                return;
+            }
+
+            if (IsActiveDetailsGameRunning())
+            {
+                var suspendResult = await SuspendActiveGameAsync();
+                if (!suspendResult.Success)
+                {
+                    Debug.WriteLine("Suspend button could not pause the selected running game.");
+                    return;
+                }
+
+                BringLauncherToFront();
+                UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+                UpdateGameDetailsActionButton();
+                return;
+            }
+
+            await LaunchActiveDetailsGameAsync();
+        }
+
         private async Task LaunchActiveDetailsGameAsync()
         {
             if (_activeGameDetailsItem is null)
@@ -690,7 +724,7 @@ namespace CryoPod
             var (launchSucceeded, gameProcess) = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
             if (gameProcess is not null)
             {
-                TrackActiveGame(gameProcess, _activeGameDetailsItem.Name, _activeGameDetailsItem.IsOnlineMultiplayer);
+                TrackActiveGame(gameProcess, _activeGameDetailsItem.InstalledGame, _activeGameDetailsItem.Name, _activeGameDetailsItem.IsOnlineMultiplayer);
             }
 
             Debug.WriteLine(!launchSucceeded
@@ -700,7 +734,7 @@ namespace CryoPod
                     : $"Launched {_activeGameDetailsItem.Name} with process {gameProcess.ProcessName} ({gameProcess.Id}).");
         }
 
-        private void TrackActiveGame(Process gameProcess, string gameName, bool requiresSafeHotkeyPath)
+        private void TrackActiveGame(Process gameProcess, InstalledGame installedGame, string gameName, bool requiresSafeHotkeyPath)
         {
             if (_activeGame is not null && _activeGame.Id != gameProcess.Id)
             {
@@ -710,11 +744,13 @@ namespace CryoPod
 
             _activeGame = gameProcess;
             _activeGameName = gameName;
+            _activeInstalledGame = installedGame;
             _safeHotkeyPathByProcessId[gameProcess.Id] = requiresSafeHotkeyPath;
             _activeGame.EnableRaisingEvents = true;
             _activeGame.Exited -= GameProcess_Exited;
             _activeGame.Exited += GameProcess_Exited;
             UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            UpdateGameDetailsActionButton();
         }
 
         private void GameProcess_Exited(object? sender, EventArgs e)
@@ -735,6 +771,7 @@ namespace CryoPod
                     _activeGame.Dispose();
                     _activeGame = null;
                     _activeGameName = null;
+                    _activeInstalledGame = null;
                 }
                 else if (TryRemoveSuspendedGame(exitedProcessId, out var suspendedGame))
                 {
@@ -751,6 +788,7 @@ namespace CryoPod
 
                 Debug.WriteLine($"Tracked game process exited: {exitedProcessName} ({exitedProcessId}).");
                 UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+                UpdateGameDetailsActionButton();
             });
         }
 
@@ -823,11 +861,13 @@ namespace CryoPod
 
                 TrackActiveGame(
                     suspendedGame.Process,
+                    suspendedGame.InstalledGame,
                     suspendedGame.Name,
                     _safeHotkeyPathByProcessId.TryGetValue(suspendedGame.Process.Id, out var requiresSafeHotkeyPath) && requiresSafeHotkeyPath);
             }
 
             UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            UpdateGameDetailsActionButton();
             Debug.WriteLine(resumeSucceeded
                 ? $"Resume button resumed {suspendedGame.Name}."
                 : "Resume button could not resume the suspended game.");
@@ -872,10 +912,18 @@ namespace CryoPod
                 return (false, usedSafePath, antiCheatDetected);
             }
 
-            _suspendedGames.Add(new SuspendedGame(Guid.NewGuid(), GetTrackedGameName(activeGame), activeGame, suspendedHandle, DateTimeOffset.Now));
+            if (_activeInstalledGame is null)
+            {
+                Debug.WriteLine("Suspending the active game was skipped because no tracked game metadata was available.");
+                return (false, usedSafePath, antiCheatDetected);
+            }
+
+            _suspendedGames.Add(new SuspendedGame(Guid.NewGuid(), _activeInstalledGame, GetTrackedGameName(activeGame), activeGame, suspendedHandle, DateTimeOffset.Now));
             _activeGame = null;
             _activeGameName = null;
+            _activeInstalledGame = null;
             UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            UpdateGameDetailsActionButton();
             return (true, usedSafePath, antiCheatDetected);
         }
 
@@ -988,6 +1036,100 @@ namespace CryoPod
             }
 
             SuspendedGamesList.Visibility = _suspendedGames.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void UpdateGameDetailsActionButton()
+        {
+            GameDetailsRunButton.Content = TryGetSuspendedGame(_activeGameDetailsItem?.InstalledGame, out _)
+                ? "Resume"
+                : IsActiveDetailsGameRunning()
+                    ? "Suspend"
+                    : "Run";
+        }
+
+        private void RefreshTrackedGameState()
+        {
+            if (_activeGame is not null && HasProcessExited(_activeGame))
+            {
+                var exitedProcessId = _activeGame.Id;
+                _activeGame.Exited -= GameProcess_Exited;
+                _activeGame.Dispose();
+                _activeGame = null;
+                _activeGameName = null;
+                _activeInstalledGame = null;
+                _safeHotkeyPathByProcessId.Remove(exitedProcessId);
+            }
+
+            var removedSuspendedGame = false;
+            for (var index = _suspendedGames.Count - 1; index >= 0; index--)
+            {
+                var suspendedGame = _suspendedGames[index];
+                if (!HasProcessExited(suspendedGame.Process))
+                {
+                    continue;
+                }
+
+                _suspendedGames.RemoveAt(index);
+                suspendedGame.Process.Exited -= GameProcess_Exited;
+                if (suspendedGame.SuspendedHandle != IntPtr.Zero)
+                {
+                    NativeMethods.CloseHandle(suspendedGame.SuspendedHandle);
+                }
+
+                suspendedGame.Process.Dispose();
+                _safeHotkeyPathByProcessId.Remove(suspendedGame.Process.Id);
+                removedSuspendedGame = true;
+            }
+
+            if (removedSuspendedGame)
+            {
+                UpdateSuspendedStateUi(_suspendedGames.Count > 0);
+            }
+        }
+
+        private bool IsActiveDetailsGameRunning()
+        {
+            return _activeGameDetailsItem is not null
+                && _activeInstalledGame is not null
+                && _activeGame is not null
+                && !HasProcessExited(_activeGame)
+                && AreSameGame(_activeGameDetailsItem.InstalledGame, _activeInstalledGame);
+        }
+
+        private static bool AreSameGame(InstalledGame left, InstalledGame right)
+        {
+            if (left.AppId is > 0 && right.AppId is > 0)
+            {
+                return left.AppId == right.AppId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(left.InstallPath)
+                && !string.IsNullOrWhiteSpace(right.InstallPath)
+                && string.Equals(left.InstallPath, right.InstallPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.Source, right.Source, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryGetSuspendedGame(InstalledGame? installedGame, out Guid suspendedGameId)
+        {
+            if (installedGame is not null)
+            {
+                for (var index = 0; index < _suspendedGames.Count; index++)
+                {
+                    if (AreSameGame(installedGame, _suspendedGames[index].InstalledGame))
+                    {
+                        suspendedGameId = _suspendedGames[index].Id;
+                        return true;
+                    }
+                }
+            }
+
+            suspendedGameId = Guid.Empty;
+            return false;
         }
 
         private static bool HasProcessExited(Process process)

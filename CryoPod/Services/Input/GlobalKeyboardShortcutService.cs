@@ -14,12 +14,18 @@ namespace CryoPod.Services.Input
         private IntPtr _previousWndProc;
         private bool _isDisposed;
         private bool _isHotkeyRegistered;
+        private IntPtr _hookHandle;
+        private readonly NativeMethods.LowLevelKeyboardProc _hookProc;
+        private bool _isCtrlPressed;
+        private bool _isShiftPressed;
+        private bool _shortcutHandled;
 
         public GlobalKeyboardShortcutService(IntPtr windowHandle)
         {
             _windowHandle = windowHandle;
             _wndProcDelegate = HotkeyWndProc;
             _wndProcPointer = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
+            _hookProc = LowLevelKeyboardHookCallback;
 
             if (_windowHandle == IntPtr.Zero)
             {
@@ -37,12 +43,31 @@ namespace CryoPod.Services.Input
             _isHotkeyRegistered = NativeMethods.RegisterHotKey(
                 _windowHandle,
                 NativeMethods.HOTKEY_ID,
-                NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT,
+                NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT | NativeMethods.MOD_NOREPEAT,
                 NativeMethods.VK_F2);
 
-            if (!_isHotkeyRegistered)
+            if (_isHotkeyRegistered)
             {
-                Debug.WriteLine("Failed to register the global hotkey. The shortcut may already be in use.");
+                Debug.WriteLine("Global hotkey registered successfully using RegisterHotKey.");
+            }
+            else
+            {
+                Debug.WriteLine("RegisterHotKey failed. Falling back to low-level keyboard hook.");
+            }
+
+            _hookHandle = NativeMethods.SetWindowsHookEx(
+                NativeMethods.WH_KEYBOARD_LL,
+                _hookProc,
+                IntPtr.Zero,
+                0);
+
+            if (_hookHandle == IntPtr.Zero)
+            {
+                Debug.WriteLine("Failed to install low-level keyboard hook.");
+            }
+            else
+            {
+                Debug.WriteLine("Low-level keyboard hook installed successfully.");
             }
         }
 
@@ -56,6 +81,12 @@ namespace CryoPod.Services.Input
             }
 
             _isDisposed = true;
+
+            if (_hookHandle != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_hookHandle);
+                _hookHandle = IntPtr.Zero;
+            }
 
             if (_windowHandle != IntPtr.Zero)
             {
@@ -86,6 +117,36 @@ namespace CryoPod.Services.Input
             }
 
             return NativeMethods.CallWindowProc(_previousWndProc, hWnd, msg, wParam, lParam);
+        }
+
+        private IntPtr LowLevelKeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0)
+            {
+                var hookStruct = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+                bool isKeyDown = wParam == (IntPtr)NativeMethods.WM_KEYDOWN || wParam == (IntPtr)NativeMethods.WM_SYSKEYDOWN;
+
+                if (hookStruct.vkCode == 0x10)
+                {
+                    _isShiftPressed = isKeyDown;
+                    _shortcutHandled = false;
+                }
+                else if (hookStruct.vkCode == 0x11)
+                {
+                    _isCtrlPressed = isKeyDown;
+                    _shortcutHandled = false;
+                }
+                else if (hookStruct.vkCode == NativeMethods.VK_F2 && isKeyDown)
+                {
+                    if (_isCtrlPressed && _isShiftPressed && !_shortcutHandled)
+                    {
+                        _shortcutHandled = true;
+                        ShortcutPressed?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+
+            return NativeMethods.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
         }
     }
 }

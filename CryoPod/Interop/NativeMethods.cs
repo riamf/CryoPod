@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Runtime.InteropServices;
 
 namespace CryoPod.Interop
@@ -15,17 +14,33 @@ namespace CryoPod.Interop
         internal const uint MOD_ALT = 0x0001;
         internal const uint MOD_CONTROL = 0x0002;
         internal const uint MOD_SHIFT = 0x0004;
+        internal const uint MOD_NOREPEAT = 0x4000;
         internal const uint VK_HOME = 0x24;
         internal const uint VK_F2 = 0x71;
         internal const uint VK_F12 = 0x7B;
         internal const uint PROCESS_SUSPEND_RESUME = 0x0800;
         internal const int HOTKEY_ID = 0xC001;
+        internal const int WH_KEYBOARD_LL = 13;
+        internal const int WM_KEYDOWN = 0x0100;
+        internal const int WM_SYSKEYDOWN = 0x0104;
 
         internal delegate IntPtr WndProcDelegate(
             IntPtr hWnd,
             uint msg,
             IntPtr wParam,
             IntPtr lParam);
+
+        internal delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct KBDLLHOOKSTRUCT
+        {
+            internal uint vkCode;
+            internal uint scanCode;
+            internal uint flags;
+            internal uint time;
+            internal IntPtr dwExtraInfo;
+        }
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -35,7 +50,20 @@ namespace CryoPod.Interop
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        internal static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
         [DllImport("user32.dll")]
+        internal static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        internal static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
