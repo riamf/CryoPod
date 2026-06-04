@@ -40,7 +40,7 @@ namespace CryoPod.Services.Launch
             {
                 _suspendedProcessId = (int)processId;
                 _suspendedWindowHandle = foregroundWindowHandle;
-                NativeMethods.ShowWindow(foregroundWindowHandle, NativeMethods.SwMinimize);
+                NativeMethods.ShowWindow(foregroundWindowHandle, NativeMethods.SW_MINIMIZE);
             }
 
             ActivateWindow(appWindowHandle);
@@ -66,7 +66,7 @@ namespace CryoPod.Services.Launch
 
         private static bool TrySuspendProcess(int processId)
         {
-            var processHandle = NativeMethods.OpenProcess(NativeMethods.ProcessSuspendResume, false, (uint)processId);
+            var processHandle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
             if (processHandle == IntPtr.Zero)
             {
                 Debug.WriteLine($"Failed to open foreground process {processId} for suspension.");
@@ -97,7 +97,7 @@ namespace CryoPod.Services.Launch
 
         private static bool TryResumeProcess(int processId)
         {
-            var processHandle = NativeMethods.OpenProcess(NativeMethods.ProcessSuspendResume, false, (uint)processId);
+            var processHandle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
             if (processHandle == IntPtr.Zero)
             {
                 Debug.WriteLine($"Failed to open suspended process {processId} for resume.");
@@ -133,7 +133,7 @@ namespace CryoPod.Services.Launch
                 return;
             }
 
-            NativeMethods.ShowWindow(windowHandle, NativeMethods.SwRestore);
+            NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_RESTORE);
             NativeMethods.BringWindowToTop(windowHandle);
             NativeMethods.SetForegroundWindow(windowHandle);
         }

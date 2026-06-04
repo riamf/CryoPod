@@ -27,7 +27,7 @@ namespace CryoPod.Services.Input
                 return;
             }
 
-            _previousWndProc = NativeMethods.SetWindowLongPtr(_windowHandle, NativeMethods.GwlpWndProc, _wndProcPointer);
+            _previousWndProc = NativeMethods.SetWindowLongPtr(_windowHandle, NativeMethods.GWLP_WNDPROC, _wndProcPointer);
             if (_previousWndProc == IntPtr.Zero)
             {
                 Debug.WriteLine("Failed to subclass the window procedure for hotkey handling.");
@@ -36,9 +36,9 @@ namespace CryoPod.Services.Input
 
             _isHotkeyRegistered = NativeMethods.RegisterHotKey(
                 _windowHandle,
-                NativeMethods.HotkeyId,
-                NativeMethods.ModControl | NativeMethods.ModShift,
-                NativeMethods.VkF2);
+                NativeMethods.HOTKEY_ID,
+                NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT,
+                NativeMethods.VK_F2);
 
             if (!_isHotkeyRegistered)
             {
@@ -61,13 +61,13 @@ namespace CryoPod.Services.Input
             {
                 if (_isHotkeyRegistered)
                 {
-                    NativeMethods.UnregisterHotKey(_windowHandle, NativeMethods.HotkeyId);
+                    NativeMethods.UnregisterHotKey(_windowHandle, NativeMethods.HOTKEY_ID);
                     _isHotkeyRegistered = false;
                 }
 
                 if (_previousWndProc != IntPtr.Zero)
                 {
-                    NativeMethods.SetWindowLongPtr(_windowHandle, NativeMethods.GwlpWndProc, _previousWndProc);
+                    NativeMethods.SetWindowLongPtr(_windowHandle, NativeMethods.GWLP_WNDPROC, _previousWndProc);
                     _previousWndProc = IntPtr.Zero;
                 }
             }
@@ -79,7 +79,7 @@ namespace CryoPod.Services.Input
             IntPtr wParam,
             IntPtr lParam)
         {
-            if (msg == NativeMethods.WmHotKey && wParam == (IntPtr)NativeMethods.HotkeyId)
+            if (msg == NativeMethods.WM_HOTKEY && wParam == (IntPtr)NativeMethods.HOTKEY_ID)
             {
                 ShortcutPressed?.Invoke(this, EventArgs.Empty);
                 return IntPtr.Zero;

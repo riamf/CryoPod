@@ -6,20 +6,20 @@ namespace CryoPod.Interop
 {
     internal static class NativeMethods
     {
-        internal const int HotkeyId = 0xC001;
-        internal const uint WmHotKey = 0x0312;
-        internal const uint ModControl = 0x0002;
-        internal const uint ModShift = 0x0004;
-        internal const uint VkF2 = 0x71;
-
-        internal const int SwHide = 0;
-        internal const int SwShow = 5;
-        internal const int SwRestore = 9;
-        internal const int SwMinimize = 6;
-        internal const uint ThreadSuspendResume = 0x0002;
-        internal const uint ProcessSuspendResume = 0x0800;
-
-        internal const int GwlpWndProc = -4;
+        internal const int SW_HIDE = 0;
+        internal const int SW_MINIMIZE = 6;
+        internal const int SW_RESTORE = 9;
+        internal const int SW_SHOW = 5;
+        internal const int GWLP_WNDPROC = -4;
+        internal const uint WM_HOTKEY = 0x0312;
+        internal const uint MOD_ALT = 0x0001;
+        internal const uint MOD_CONTROL = 0x0002;
+        internal const uint MOD_SHIFT = 0x0004;
+        internal const uint VK_HOME = 0x24;
+        internal const uint VK_F2 = 0x71;
+        internal const uint VK_F12 = 0x7B;
+        internal const uint PROCESS_SUSPEND_RESUME = 0x0800;
+        internal const int HOTKEY_ID = 0xC001;
 
         internal delegate IntPtr WndProcDelegate(
             IntPtr hWnd,
@@ -67,9 +67,9 @@ namespace CryoPod.Interop
         internal static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("ntdll.dll")]
-        internal static extern int NtSuspendProcess(IntPtr hProcess);
+        internal static extern uint NtSuspendProcess(IntPtr hProcess);
 
         [DllImport("ntdll.dll")]
-        internal static extern int NtResumeProcess(IntPtr hProcess);
+        internal static extern uint NtResumeProcess(IntPtr hProcess);
     }
 }
