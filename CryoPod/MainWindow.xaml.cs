@@ -51,6 +51,14 @@ namespace CryoPod
         private static readonly TimeSpan FocusAnimationDuration = TimeSpan.FromMilliseconds(180);
 
         private static readonly TimeSpan SteamMetadataRefreshInterval = TimeSpan.FromHours(24);
+        private static readonly HashSet<string> KnownAntiCheatProcessNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "EasyAntiCheat",
+            "EasyAntiCheat_EOS",
+            "BEService",
+            "vgtray",
+            "FACEIT",
+        };
 
         private IReadOnlyList<InstalledGame> _installedGames = [];
         private IReadOnlyList<SteamAppDetailsResponse> _steamAppDetails = [];
@@ -61,6 +69,7 @@ namespace CryoPod
         private readonly GameLibraryNavigationController _gameLibraryNavigationController;
         private GlobalKeyboardShortcutService? _globalKeyboardShortcutService;
         private Process? _gameProcess;
+        private bool _trackedGameRequiresSafeHotkeyPath;
         private GameLibraryItemViewModel? _activeGameDetailsItem;
         private nint _windowHandle;
         private bool _windowInitialized;
@@ -214,9 +223,32 @@ namespace CryoPod
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                var actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
+                var actionSucceeded = false;
+
+                if (_foregroundProcessControlService.HasSuspendedProcess)
+                {
+                    actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
+                    Debug.WriteLine(actionSucceeded
+                        ? "Global hotkey resumed the suspended game."
+                        : "Global resume shortcut was ignored or failed.");
+                    return;
+                }
+
+                var antiCheatDetected = IsKnownAntiCheatRunning();
+                if (_trackedGameRequiresSafeHotkeyPath || antiCheatDetected)
+                {
+                    actionSucceeded = _foregroundProcessControlService.TryMinimizeTrackedOrForegroundProcessAndActivateWindow(_windowHandle, Environment.ProcessId, _gameProcess);
+                    Debug.WriteLine(actionSucceeded
+                        ? antiCheatDetected
+                            ? "Global hotkey used the safe minimize-only path because anti-cheat was detected."
+                            : "Global hotkey used the safe minimize-only path for an online multiplayer title."
+                        : "Global safe shortcut was ignored or failed.");
+                    return;
+                }
+
+                actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
                 Debug.WriteLine(actionSucceeded
-                    ? "Global hotkey executed."
+                    ? "Global hotkey suspended the foreground game."
                     : "Global suspend shortcut was ignored, unavailable, or failed.");
             });
         }
@@ -607,10 +639,15 @@ namespace CryoPod
                 return;
             }
 
+            _trackedGameRequiresSafeHotkeyPath = _activeGameDetailsItem.IsOnlineMultiplayer;
             var (launchSucceeded, gameProcess) = await _gameLaunchService.LaunchAsync(_activeGameDetailsItem.InstalledGame);
             if (gameProcess is not null)
             {
                 TrackGameProcess(gameProcess);
+            }
+            else if (!launchSucceeded)
+            {
+                _trackedGameRequiresSafeHotkeyPath = false;
             }
 
             Debug.WriteLine(!launchSucceeded
@@ -633,12 +670,14 @@ namespace CryoPod
         {
             if (_gameProcess is null)
             {
+                _trackedGameRequiresSafeHotkeyPath = false;
                 return;
             }
 
             _gameProcess.Exited -= GameProcess_Exited;
             _gameProcess.Dispose();
             _gameProcess = null;
+            _trackedGameRequiresSafeHotkeyPath = false;
         }
 
         private void GameProcess_Exited(object? sender, EventArgs e)
@@ -659,6 +698,26 @@ namespace CryoPod
                 Debug.WriteLine($"Tracked game process exited: {exitedProcess.ProcessName} ({exitedProcess.Id}).");
                 UntrackGameProcess();
             });
+        }
+
+        private static bool IsKnownAntiCheatRunning()
+        {
+            foreach (var process in Process.GetProcesses())
+            {
+                try
+                {
+                    if (KnownAntiCheatProcessNames.Contains(process.ProcessName))
+                    {
+                        return true;
+                    }
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            return false;
         }
 
         private static string BuildGameDetailsMetadata(GameLibraryItemViewModel gameLibraryItem)

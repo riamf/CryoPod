@@ -26,6 +26,7 @@ namespace CryoPod.ViewModels
             Developers = JoinValues(appData?.Developers);
             Publishers = JoinValues(appData?.Publishers);
             Genres = JoinValues(appData?.Genres.Select(genre => genre.Description));
+            IsOnlineMultiplayer = DetectOnlineMultiplayer(appData?.Categories.Select(category => category.Description));
             ScreenshotUrls = appData?.Screenshots
                 .Select(screenshot => screenshot.PathFull ?? screenshot.PathThumbnail)
                 .Where(url => !string.IsNullOrWhiteSpace(url))
@@ -55,6 +56,8 @@ namespace CryoPod.ViewModels
         public string? Publishers { get; }
 
         public string? Genres { get; }
+
+        public bool IsOnlineMultiplayer { get; }
 
         public IReadOnlyList<string> ScreenshotUrls { get; }
 
@@ -101,6 +104,32 @@ namespace CryoPod.ViewModels
             formatted = Regex.Replace(formatted, @"[ \t]+\n", "\n");
 
             return formatted.Trim();
+        }
+
+        private static bool DetectOnlineMultiplayer(IEnumerable<string?>? categories)
+        {
+            if (categories is null)
+            {
+                return false;
+            }
+
+            foreach (var category in categories)
+            {
+                if (string.IsNullOrWhiteSpace(category))
+                {
+                    continue;
+                }
+
+                if (category.Contains("Online", StringComparison.OrdinalIgnoreCase)
+                    || category.Contains("PvP", StringComparison.OrdinalIgnoreCase)
+                    || category.Contains("MMO", StringComparison.OrdinalIgnoreCase)
+                    || category.Contains("Cross-Platform Multiplayer", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -11,6 +11,8 @@ namespace CryoPod.Services.Launch
         private IntPtr _suspendedWindowHandle;
         private bool _isDisposed;
 
+        public bool HasSuspendedProcess => _suspendedProcessId.HasValue;
+
         public bool ToggleForegroundProcessSuspension(IntPtr appWindowHandle, int appProcessId)
         {
             if (_suspendedProcessId is int suspendedProcessId)
@@ -27,6 +29,35 @@ namespace CryoPod.Services.Launch
             {
                 ClearSuspendedProcessState();
             }
+        }
+
+        public bool TryMinimizeTrackedOrForegroundProcessAndActivateWindow(IntPtr appWindowHandle, int appProcessId, Process? trackedProcess)
+        {
+            var targetWindowHandle = GetTrackedProcessWindowHandle(trackedProcess);
+            if (targetWindowHandle != IntPtr.Zero)
+            {
+                NativeMethods.ShowWindow(targetWindowHandle, NativeMethods.SW_MINIMIZE);
+                ActivateWindow(appWindowHandle);
+                return true;
+            }
+
+            var foregroundWindowHandle = NativeMethods.GetForegroundWindow();
+            if (foregroundWindowHandle == IntPtr.Zero || foregroundWindowHandle == appWindowHandle)
+            {
+                ActivateWindow(appWindowHandle);
+                return false;
+            }
+
+            _ = NativeMethods.GetWindowThreadProcessId(foregroundWindowHandle, out var processId);
+            if (processId == 0 || processId == appProcessId)
+            {
+                ActivateWindow(appWindowHandle);
+                return false;
+            }
+
+            NativeMethods.ShowWindow(foregroundWindowHandle, NativeMethods.SW_MINIMIZE);
+            ActivateWindow(appWindowHandle);
+            return true;
         }
 
         private bool TrySuspendForegroundProcessAndActivateWindow(IntPtr appWindowHandle, int appProcessId)
@@ -179,6 +210,30 @@ namespace CryoPod.Services.Launch
 
             _suspendedProcessId = null;
             _suspendedWindowHandle = IntPtr.Zero;
+        }
+
+        private static IntPtr GetTrackedProcessWindowHandle(Process? trackedProcess)
+        {
+            if (trackedProcess is null)
+            {
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                if (trackedProcess.HasExited)
+                {
+                    return IntPtr.Zero;
+                }
+
+                trackedProcess.Refresh();
+                return trackedProcess.MainWindowHandle;
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Failed to inspect tracked game window handle: {exception}");
+                return IntPtr.Zero;
+            }
         }
 
         private static void ActivateWindow(IntPtr windowHandle)
