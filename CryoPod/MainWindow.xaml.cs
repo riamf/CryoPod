@@ -132,6 +132,7 @@ namespace CryoPod
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             Activated -= MainWindow_Activated;
+            _foregroundProcessControlService.Dispose();
             if (_globalKeyboardShortcutService is not null)
             {
                 _globalKeyboardShortcutService.ShortcutPressed -= GlobalKeyboardShortcutService_ShortcutPressed;

@@ -4,10 +4,12 @@ using CryoPod.Interop;
 
 namespace CryoPod.Services.Launch
 {
-    internal sealed class ForegroundProcessControlService
+    internal sealed class ForegroundProcessControlService : IDisposable
     {
         private int? _suspendedProcessId;
+        private IntPtr _suspendedProcessHandle;
         private IntPtr _suspendedWindowHandle;
+        private bool _isDisposed;
 
         public bool ToggleForegroundProcessSuspension(IntPtr appWindowHandle, int appProcessId)
         {
@@ -52,19 +54,37 @@ namespace CryoPod.Services.Launch
             var resumeSucceeded = TryResumeProcess(processId);
             if (!resumeSucceeded)
             {
-                _suspendedProcessId = null;
-                _suspendedWindowHandle = IntPtr.Zero;
+                ClearSuspendedProcessState();
                 return false;
             }
 
             var suspendedWindowHandle = _suspendedWindowHandle;
-            _suspendedProcessId = null;
-            _suspendedWindowHandle = IntPtr.Zero;
+            ClearSuspendedProcessState();
             ActivateWindow(suspendedWindowHandle);
             return true;
         }
 
-        private static bool TrySuspendProcess(int processId)
+        public void Dispose()
+        {
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            _isDisposed = true;
+
+            if (_suspendedProcessId is int suspendedProcessId)
+            {
+                if (!TryResumeProcess(suspendedProcessId))
+                {
+                    Debug.WriteLine($"Failed to resume suspended process {suspendedProcessId} during cleanup.");
+                }
+
+                ClearSuspendedProcessState();
+            }
+        }
+
+        private bool TrySuspendProcess(int processId)
         {
             var processHandle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
             if (processHandle == IntPtr.Zero)
@@ -78,6 +98,7 @@ namespace CryoPod.Services.Launch
                 var status = NativeMethods.NtSuspendProcess(processHandle);
                 if (status == 0)
                 {
+                    _suspendedProcessHandle = processHandle;
                     return true;
                 }
 
@@ -91,17 +112,28 @@ namespace CryoPod.Services.Launch
             }
             finally
             {
-                NativeMethods.CloseHandle(processHandle);
+                if (_suspendedProcessHandle != processHandle)
+                {
+                    NativeMethods.CloseHandle(processHandle);
+                }
             }
         }
 
-        private static bool TryResumeProcess(int processId)
+        private bool TryResumeProcess(int processId)
         {
-            var processHandle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
+            var processHandle = _suspendedProcessHandle;
+            var ownsHandle = false;
+
             if (processHandle == IntPtr.Zero)
             {
-                Debug.WriteLine($"Failed to open suspended process {processId} for resume.");
-                return false;
+                processHandle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
+                if (processHandle == IntPtr.Zero)
+                {
+                    Debug.WriteLine($"Failed to open suspended process {processId} for resume.");
+                    return false;
+                }
+
+                ownsHandle = true;
             }
 
             try
@@ -122,8 +154,23 @@ namespace CryoPod.Services.Launch
             }
             finally
             {
-                NativeMethods.CloseHandle(processHandle);
+                if (ownsHandle)
+                {
+                    NativeMethods.CloseHandle(processHandle);
+                }
             }
+        }
+
+        private void ClearSuspendedProcessState()
+        {
+            if (_suspendedProcessHandle != IntPtr.Zero)
+            {
+                NativeMethods.CloseHandle(_suspendedProcessHandle);
+                _suspendedProcessHandle = IntPtr.Zero;
+            }
+
+            _suspendedProcessId = null;
+            _suspendedWindowHandle = IntPtr.Zero;
         }
 
         private static void ActivateWindow(IntPtr windowHandle)
