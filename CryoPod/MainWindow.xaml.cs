@@ -227,7 +227,7 @@ namespace CryoPod
 
                 if (_foregroundProcessControlService.HasSuspendedProcess)
                 {
-                    actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
+                    actionSucceeded = _foregroundProcessControlService.ToggleTrackedProcessSuspension(_windowHandle, _gameProcess);
                     Debug.WriteLine(actionSucceeded
                         ? "Global hotkey resumed the suspended game."
                         : "Global resume shortcut was ignored or failed.");
@@ -246,9 +246,9 @@ namespace CryoPod
                     return;
                 }
 
-                actionSucceeded = _foregroundProcessControlService.ToggleForegroundProcessSuspension(_windowHandle, Environment.ProcessId);
+                actionSucceeded = _foregroundProcessControlService.ToggleTrackedProcessSuspension(_windowHandle, _gameProcess);
                 Debug.WriteLine(actionSucceeded
-                    ? "Global hotkey suspended the foreground game."
+                    ? "Global hotkey suspended the tracked game."
                     : "Global suspend shortcut was ignored, unavailable, or failed.");
             });
         }

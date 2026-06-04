@@ -13,14 +13,14 @@ namespace CryoPod.Services.Launch
 
         public bool HasSuspendedProcess => _suspendedProcessId.HasValue;
 
-        public bool ToggleForegroundProcessSuspension(IntPtr appWindowHandle, int appProcessId)
+        public bool ToggleTrackedProcessSuspension(IntPtr appWindowHandle, Process? trackedProcess)
         {
             if (_suspendedProcessId is int suspendedProcessId)
             {
                 return TryResumeProcessAndActivateWindow(suspendedProcessId);
             }
 
-            return TrySuspendForegroundProcessAndActivateWindow(appWindowHandle, appProcessId);
+            return TrySuspendTrackedProcessAndActivateWindow(appWindowHandle, trackedProcess);
         }
 
         public void ClearSuspendedProcessIfMatches(int processId)
@@ -60,28 +60,45 @@ namespace CryoPod.Services.Launch
             return true;
         }
 
-        private bool TrySuspendForegroundProcessAndActivateWindow(IntPtr appWindowHandle, int appProcessId)
+        private bool TrySuspendTrackedProcessAndActivateWindow(IntPtr appWindowHandle, Process? trackedProcess)
         {
-            var foregroundWindowHandle = NativeMethods.GetForegroundWindow();
-            if (foregroundWindowHandle == IntPtr.Zero || foregroundWindowHandle == appWindowHandle)
+            if (trackedProcess is null)
             {
                 ActivateWindow(appWindowHandle);
                 return false;
             }
 
-            _ = NativeMethods.GetWindowThreadProcessId(foregroundWindowHandle, out var processId);
-            if (processId == 0 || processId == appProcessId)
+            int processId;
+            IntPtr windowHandle;
+
+            try
             {
+                if (trackedProcess.HasExited)
+                {
+                    ActivateWindow(appWindowHandle);
+                    return false;
+                }
+
+                trackedProcess.Refresh();
+                processId = trackedProcess.Id;
+                windowHandle = trackedProcess.MainWindowHandle;
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Failed to inspect tracked game process before suspension: {exception}");
                 ActivateWindow(appWindowHandle);
                 return false;
             }
 
-            var suspendSucceeded = TrySuspendProcess((int)processId);
+            var suspendSucceeded = TrySuspendProcess(processId);
             if (suspendSucceeded)
             {
-                _suspendedProcessId = (int)processId;
-                _suspendedWindowHandle = foregroundWindowHandle;
-                NativeMethods.ShowWindow(foregroundWindowHandle, NativeMethods.SW_MINIMIZE);
+                _suspendedProcessId = processId;
+                _suspendedWindowHandle = windowHandle;
+                if (windowHandle != IntPtr.Zero)
+                {
+                    NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_MINIMIZE);
+                }
             }
 
             ActivateWindow(appWindowHandle);
