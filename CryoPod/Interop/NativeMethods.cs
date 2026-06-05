@@ -19,10 +19,16 @@ namespace CryoPod.Interop
         internal const uint VK_F2 = 0x71;
         internal const uint VK_F12 = 0x7B;
         internal const uint PROCESS_SUSPEND_RESUME = 0x0800;
+        internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+        internal const uint TH32CS_SNAPPROCESS = 0x00000002;
+        internal const uint TH32CS_SNAPTHREAD = 0x00000004;
+        internal const uint THREAD_SUSPEND_RESUME = 0x0002;
         internal const int HOTKEY_ID = 0xC001;
         internal const int WH_KEYBOARD_LL = 13;
         internal const int WM_KEYDOWN = 0x0100;
         internal const int WM_SYSKEYDOWN = 0x0104;
+
+        internal static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
 
         internal delegate IntPtr WndProcDelegate(
             IntPtr hWnd,
@@ -40,6 +46,35 @@ namespace CryoPod.Interop
             internal uint flags;
             internal uint time;
             internal IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct THREADENTRY32
+        {
+            internal uint dwSize;
+            internal uint cntUsage;
+            internal uint th32ThreadID;
+            internal uint th32OwnerProcessID;
+            internal int tpBasePri;
+            internal int tpDeltaPri;
+            internal uint dwFlags;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        internal struct PROCESSENTRY32
+        {
+            internal uint dwSize;
+            internal uint cntUsage;
+            internal uint th32ProcessID;
+            internal IntPtr th32DefaultHeapID;
+            internal uint th32ModuleID;
+            internal uint cntThreads;
+            internal uint th32ParentProcessID;
+            internal int pcPriClassBase;
+            internal uint dwFlags;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            internal string szExeFile;
         }
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -93,6 +128,37 @@ namespace CryoPod.Interop
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool Thread32First(IntPtr hSnapshot, ref THREADENTRY32 lpte);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool Thread32Next(IntPtr hSnapshot, ref THREADENTRY32 lpte);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern IntPtr OpenThread(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwThreadId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint SuspendThread(IntPtr hThread);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint ResumeThread(IntPtr hThread);
+
+        [DllImport("kernel32.dll")]
+        internal static extern uint GetProcessId(IntPtr handle);
 
         [DllImport("ntdll.dll")]
         internal static extern uint NtSuspendProcess(IntPtr hProcess);
