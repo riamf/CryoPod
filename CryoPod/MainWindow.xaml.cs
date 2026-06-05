@@ -907,7 +907,7 @@ namespace CryoPod
             SuspendedProcessState? suspendedState = null;
             var actionSucceeded = usedSafePath
                 ? _foregroundProcessControlService.TryMinimizeTrackedOrForegroundProcessAndActivateWindow(_windowHandle, Environment.ProcessId, activeGame)
-                : _foregroundProcessControlService.TrySuspendTrackedProcessAndActivateWindow(_windowHandle, activeGame, out suspendedState);
+                : await _foregroundProcessControlService.TrySuspendTrackedProcessAndActivateWindowAsync(_windowHandle, activeGame, state => suspendedState = state);
 
             if (!actionSucceeded)
             {

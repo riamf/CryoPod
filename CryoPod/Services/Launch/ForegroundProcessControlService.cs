@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using CryoPod.Interop;
 
 namespace CryoPod.Services.Launch
@@ -23,13 +24,15 @@ namespace CryoPod.Services.Launch
 
     internal sealed class ForegroundProcessControlService
     {
-        public bool TrySuspendTrackedProcessAndActivateWindow(IntPtr appWindowHandle, Process? trackedProcess, out SuspendedProcessState? suspendedState)
+        private static readonly TimeSpan SuspendAfterMinimizeDelay = TimeSpan.FromMilliseconds(250);
+
+        public async Task<bool> TrySuspendTrackedProcessAndActivateWindowAsync(IntPtr appWindowHandle, Process? trackedProcess, Action<SuspendedProcessState?> setSuspendedState)
         {
-            suspendedState = null;
+            setSuspendedState(null);
             Debug.WriteLine(trackedProcess is null
-                ? "TrySuspendTrackedProcessAndActivateWindow called without a tracked process."
-                : $"TrySuspendTrackedProcessAndActivateWindow called for process {trackedProcess.Id}.");
-            return TrySuspendTrackedProcessAndActivateWindowCore(appWindowHandle, trackedProcess, ref suspendedState);
+                ? "TrySuspendTrackedProcessAndActivateWindowAsync called without a tracked process."
+                : $"TrySuspendTrackedProcessAndActivateWindowAsync called for process {trackedProcess.Id}.");
+            return await TrySuspendTrackedProcessAndActivateWindowCoreAsync(appWindowHandle, trackedProcess, setSuspendedState);
         }
 
         public bool TryResumeSuspendedProcessAndActivateWindow(Process? trackedProcess, SuspendedProcessState? suspendedState)
@@ -117,31 +120,33 @@ namespace CryoPod.Services.Launch
             CloseProcessHandles(suspendedState);
         }
 
-        private bool TrySuspendTrackedProcessAndActivateWindowCore(IntPtr appWindowHandle, Process? trackedProcess, ref SuspendedProcessState? suspendedState)
+        private async Task<bool> TrySuspendTrackedProcessAndActivateWindowCoreAsync(IntPtr appWindowHandle, Process? trackedProcess, Action<SuspendedProcessState?> setSuspendedState)
         {
             if (trackedProcess is null)
             {
-                Debug.WriteLine("TrySuspendTrackedProcessAndActivateWindowCore aborted because tracked process is null.");
+                Debug.WriteLine("TrySuspendTrackedProcessAndActivateWindowCoreAsync aborted because tracked process is null.");
                 ActivateWindow(appWindowHandle);
                 return false;
             }
 
             int processId;
+            List<int> processIds;
             IntPtr windowHandle;
 
             try
             {
                 if (trackedProcess.HasExited)
                 {
-                    Debug.WriteLine("TrySuspendTrackedProcessAndActivateWindowCore aborted because tracked process has exited.");
+                    Debug.WriteLine("TrySuspendTrackedProcessAndActivateWindowCoreAsync aborted because tracked process has exited.");
                     ActivateWindow(appWindowHandle);
                     return false;
                 }
 
                 trackedProcess.Refresh();
                 processId = trackedProcess.Id;
-                windowHandle = trackedProcess.MainWindowHandle;
-                Debug.WriteLine($"Preparing to suspend process {processId}. MainWindowHandle=0x{windowHandle.ToInt64():X}.");
+                processIds = GetProcessTree(processId);
+                windowHandle = GetWindowHandleForProcessTree(trackedProcess, processIds);
+                Debug.WriteLine($"Preparing to suspend process tree rooted at {processId}. WindowHandle=0x{windowHandle.ToInt64():X}. ProcessTree=[{string.Join(", ", processIds)}].");
             }
             catch (Exception exception)
             {
@@ -150,15 +155,24 @@ namespace CryoPod.Services.Launch
                 return false;
             }
 
-            var suspendSucceeded = TrySuspendProcessTree(processId, out suspendedState);
+            if (windowHandle != IntPtr.Zero)
+            {
+                Debug.WriteLine($"Minimizing process tree window 0x{windowHandle.ToInt64():X} before suspension.");
+                NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_MINIMIZE);
+                ActivateWindow(appWindowHandle);
+                Debug.WriteLine($"Waiting {SuspendAfterMinimizeDelay.TotalMilliseconds}ms after minimize before suspending process tree rooted at {processId}.");
+                await Task.Delay(SuspendAfterMinimizeDelay);
+            }
+            else
+            {
+                Debug.WriteLine($"No process tree window was found for root {processId}. Proceeding to suspend without a pre-suspend minimize.");
+                ActivateWindow(appWindowHandle);
+            }
+
+            var suspendSucceeded = TrySuspendProcessTree(processIds, out var suspendedState);
             if (suspendSucceeded)
             {
-                if (windowHandle != IntPtr.Zero)
-                {
-                    Debug.WriteLine($"Suspension succeeded for process {processId}. Minimizing window 0x{windowHandle.ToInt64():X}.");
-                    NativeMethods.ShowWindow(windowHandle, NativeMethods.SW_MINIMIZE);
-                }
-
+                setSuspendedState(suspendedState);
                 Debug.WriteLine($"Suspension succeeded for process {processId}. SuspendedProcesses=[{string.Join(", ", suspendedState?.ProcessIds ?? [])}].");
             }
             else
@@ -166,7 +180,6 @@ namespace CryoPod.Services.Launch
                 Debug.WriteLine($"Suspension failed for process {processId}.");
             }
 
-            ActivateWindow(appWindowHandle);
             return suspendSucceeded;
         }
 
@@ -182,11 +195,16 @@ namespace CryoPod.Services.Launch
             return true;
         }
 
-        private static bool TrySuspendProcessTree(int processId, out SuspendedProcessState? suspendedState)
+        private static bool TrySuspendProcessTree(IReadOnlyList<int> processIds, out SuspendedProcessState? suspendedState)
         {
             suspendedState = null;
-            var processIds = GetProcessTree(processId);
-            Debug.WriteLine($"Resolved suspend process tree for root {processId}: [{string.Join(", ", processIds)}].");
+            if (processIds.Count == 0)
+            {
+                return false;
+            }
+
+            var rootProcessId = processIds[0];
+            Debug.WriteLine($"Resolved suspend process tree for root {rootProcessId}: [{string.Join(", ", processIds)}].");
 
             var suspendedProcessIds = new List<int>(processIds.Count);
             var suspendedHandles = new List<IntPtr>(processIds.Count);
@@ -195,7 +213,7 @@ namespace CryoPod.Services.Launch
             {
                 if (!TrySuspendSingleProcess(currentProcessId, out var processHandle))
                 {
-                    Debug.WriteLine($"Failed to suspend process tree rooted at {processId}. Rolling back {suspendedProcessIds.Count} suspended process(es).");
+                    Debug.WriteLine($"Failed to suspend process tree rooted at {rootProcessId}. Rolling back {suspendedProcessIds.Count} suspended process(es).");
                     TryResumeProcesses(new SuspendedProcessState(suspendedProcessIds, suspendedHandles));
                     CloseProcessHandles(new SuspendedProcessState(suspendedProcessIds, suspendedHandles));
                     return false;
@@ -207,6 +225,58 @@ namespace CryoPod.Services.Launch
 
             suspendedState = new SuspendedProcessState(suspendedProcessIds, suspendedHandles);
             return true;
+        }
+
+        private static IntPtr GetWindowHandleForProcessTree(Process trackedProcess, IReadOnlyList<int> processIds)
+        {
+            try
+            {
+                trackedProcess.Refresh();
+                if (trackedProcess.MainWindowHandle != IntPtr.Zero)
+                {
+                    return trackedProcess.MainWindowHandle;
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Failed to inspect tracked process window before suspend: {exception}");
+            }
+
+            foreach (var processId in processIds)
+            {
+                if (processId == trackedProcess.Id)
+                {
+                    continue;
+                }
+
+                Process? childProcess = null;
+
+                try
+                {
+                    childProcess = Process.GetProcessById(processId);
+                    childProcess.Refresh();
+                    if (childProcess.HasExited)
+                    {
+                        continue;
+                    }
+
+                    if (childProcess.MainWindowHandle != IntPtr.Zero)
+                    {
+                        Debug.WriteLine($"Using child process {processId} window 0x{childProcess.MainWindowHandle.ToInt64():X} for pre-suspend minimize.");
+                        return childProcess.MainWindowHandle;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Debug.WriteLine($"Failed to inspect child process {processId} window before suspend: {exception}");
+                }
+                finally
+                {
+                    childProcess?.Dispose();
+                }
+            }
+
+            return IntPtr.Zero;
         }
 
         private static bool TrySuspendSingleProcess(int processId, out IntPtr suspendedHandle)
